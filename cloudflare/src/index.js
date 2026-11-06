@@ -37,8 +37,9 @@ async function authorize(request, env, origin, redirectUri) {
       const { handle, headers } = await oauth.beginConsent(auth);
       headers.set("Content-Type", "text/html; charset=utf-8");
       headers.set("Cache-Control", "no-store");
-      headers.set("Referrer-Policy", "no-referrer");
-      headers.set("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+      // A same-origin form POST needs its Origin header for the consent check.
+      headers.set("Referrer-Policy", "strict-origin");
+      headers.set("Content-Security-Policy", `default-src 'none'; form-action 'self' ${redirectUri}; frame-ancestors 'none'; base-uri 'none'`);
       return new Response(`<!doctype html>
 <html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <title>すみ StopWatch 接続</title><h1>すみ StopWatch 接続</h1>

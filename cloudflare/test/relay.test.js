@@ -86,6 +86,8 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   });
   const consent = await fetch("/authorize?" + query);
   assert.equal(consent.status, 200);
+  assert.equal(consent.headers.get("referrer-policy"), "strict-origin");
+  assert.ok(consent.headers.get("content-security-policy").includes(`form-action 'self' ${REDIRECT};`));
   const handle = (await consent.text()).match(/name="handle" value="([^"]+)"/)[1];
   const cookie = consent.headers.get("set-cookie").split(";")[0];
   const approve = (key, origin = ORIGIN) => fetch("/authorize", {
@@ -94,6 +96,7 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
     body: new URLSearchParams({ handle, key }),
   });
   assert.equal((await approve(OWNER_KEY, "https://example.com")).status, 403);
+  assert.equal((await approve(OWNER_KEY, "null")).status, 403);
   assert.equal((await approve("wrong")).status, 403);
   const approved = await approve(OWNER_KEY);
   assert.equal(approved.status, 303);
