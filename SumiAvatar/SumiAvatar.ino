@@ -15,6 +15,14 @@ constexpr uint32_t kIdleMs = 15000;
 constexpr uint32_t kPollMs = 3000;
 constexpr int kVoiceThreshold = 450;
 constexpr uint8_t kVolume = 64;
+#ifdef SUMI_AUDIO_BENCH
+constexpr bool kAudioBench = true;
+#else
+constexpr bool kAudioBench = false;
+#endif
+constexpr size_t kSpeechRate = kAudioBench ? VoiceLink::kRecordRate : VoiceLink::kPlaybackRate;
+constexpr const char* kRecordPrompt = kAudioBench ? "Audio test - A: Record" : "A: Record";
+constexpr uint32_t kBenchReplyDelayMs = kIdleMs + 1000;
 
 M5Canvas frame(&M5.Display);
 Mode mode = Mode::Badge;
@@ -28,6 +36,8 @@ uint8_t uploadAttempts = 0;
 uint32_t nextNetworkMs = 0;
 uint32_t modeStarted = 0;
 uint32_t lastFrame = 0;
+uint32_t benchQueuedAt = 0;
+bool benchReplyPending = false;
 int16_t* recording = nullptr;
 int16_t* playback = nullptr;
 size_t queued = 0;
@@ -86,12 +96,28 @@ void inspectRecording(size_t done) {
   }
 }
 
+void playSpeech(const int16_t* audio, size_t samples, const char* status) {
+  enter(Mode::Speaking, status);
+  M5.Speaker.setVolume(kVolume);
+  if (!M5.Speaker.playRaw(audio, samples, kSpeechRate)) {
+    M5.Speaker.end();
+    enter(Mode::Conversation, "Speaker error");
+  }
+}
+
 void finishRecording(bool failed = false) {
   M5.Mic.end();
   const size_t samples = captured.load(std::memory_order_acquire);
   inspectRecording(samples);
   if (failed || samples < VoiceLink::kRecordRate / 5 || !lastVoiceSample) {
     enter(Mode::Conversation, failed ? "Mic error" : "No speech");
+    return;
+  }
+  if (kAudioBench) {
+    reply.samples = samples;
+    benchQueuedAt = millis();
+    benchReplyPending = true;
+    enter(Mode::Sending, "Replay in 16s");
     return;
   }
   upload = {VoiceLink::Job::Upload, samples, ""};
@@ -122,7 +148,15 @@ void pumpRecording() {
 }
 
 void startRecording() {
-  if (!VoiceLink::connected()) {
+  if (kAudioBench && benchReplyPending) {
+    enter(Mode::Conversation, "Replay pending");
+    return;
+  }
+  if (!recording) {
+    enter(Mode::Conversation, "Audio memory error");
+    return;
+  }
+  if (!kAudioBench && !VoiceLink::connected()) {
     enter(Mode::Conversation, wifiConfigured ? "Wi-Fi connecting" : "Wi-Fi setup needed");
     return;
   }
@@ -140,11 +174,7 @@ void startRecording() {
 
 void playReply() {
   replyPending = false;
-  enter(Mode::Speaking, "AI voice");
-  M5.Speaker.setVolume(kVolume);
-  if (!M5.Speaker.playRaw(playback, reply.samples, VoiceLink::kPlaybackRate)) {
-    enter(Mode::Conversation, "Speaker error");
-  }
+  playSpeech(playback, reply.samples, "AI voice");
 }
 
 void acknowledgeReply(const VoiceLink::Request& request) {
@@ -170,10 +200,11 @@ void renderAvatar(uint32_t now) {
   static int previousY = 0;
   int mouth = 0;
   if (mode == Mode::Speaking) {
-    const size_t index = size_t(elapsed) * VoiceLink::kPlaybackRate / 1000;
+    const int16_t* audio = kAudioBench ? recording : playback;
+    const size_t index = size_t(elapsed) * kSpeechRate / 1000;
     if (index < reply.samples) {
-      const size_t count = std::min(reply.samples - index, size_t(480));
-      mouth = std::min(10, signalLevel(playback + index, count) / 350);
+      const size_t count = std::min(reply.samples - index, kSpeechRate / 50);
+      mouth = std::min(10, signalLevel(audio + index, count) / 350);
     }
   }
   const bool newMode = mode != previousMode || modeStarted != previousStart;
@@ -270,9 +301,11 @@ void setup() {
   }
 
   recording = static_cast<int16_t*>(ps_malloc(VoiceLink::kRecordSamples * sizeof(int16_t)));
-  playback = static_cast<int16_t*>(ps_malloc(VoiceLink::kPlaybackSamples * sizeof(int16_t)));
-  if (recording && playback) {
-    wifiConfigured = VoiceLink::begin(recording, playback);
+  if (!kAudioBench) {
+    playback = static_cast<int16_t*>(ps_malloc(VoiceLink::kPlaybackSamples * sizeof(int16_t)));
+    if (recording && playback) {
+      wifiConfigured = VoiceLink::begin(recording, playback);
+    }
   }
   enter(Mode::Badge);
   ready = true;
@@ -291,7 +324,7 @@ void loop() {
   switch (mode) {
     case Mode::Badge:
       if (left || right) {
-        enter(Mode::Conversation, "A: Record");
+        enter(Mode::Conversation, kRecordPrompt);
       }
       break;
     case Mode::Conversation:
@@ -316,11 +349,20 @@ void loop() {
     case Mode::Speaking:
       if (!M5.Speaker.isPlaying()) {
         M5.Speaker.end();
-        acknowledgeReply(reply.request);
-        enter(Mode::Conversation, "A: Record");
+        if (!kAudioBench) {
+          acknowledgeReply(reply.request);
+        }
+        enter(Mode::Conversation, kRecordPrompt);
       }
       break;
   }
-  updateNetwork(now);
+  if (kAudioBench) {
+    if (benchReplyPending && now - benchQueuedAt >= kBenchReplyDelayMs) {
+      benchReplyPending = false;
+      playSpeech(recording, reply.samples, "Local playback");
+    }
+  } else {
+    updateNetwork(now);
+  }
   renderAvatar(millis());
 }

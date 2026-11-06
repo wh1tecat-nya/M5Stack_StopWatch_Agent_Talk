@@ -18,3 +18,8 @@ StopWatch C152から、設定した2.4 GHz Wi-Fiを経由して、既存のChatG
 5. ChatGPTでMCPプラグインを接続し、既存のすみの会話でイベント `stopwatch.message` を `device_id: stopwatch` で購読します。発話の文字起こしに短く返答し、イベントに含まれる `request_id` と返答文を `submit_stopwatch_reply` に渡すよう指示します。
 
 中継のローカルテストは `python3 -m unittest relay.test_relay -v` で実行できます。模擬の文字起こし・イベント受信・音声合成を使います。実機への書き込みと既存のすみへの実接続は別途検証します。
+
+音声の実機確認には、Arduino CLIのビルドオプション
+`--build-property compiler.cpp.extra_flags=-DSUMI_AUDIO_BENCH` を追加できます。
+この検証ビルドはWi-Fiを起動せず、左ボタンで録音した音声を本体で再生します。
+録音終了の15秒後にバッジに戻り、その1秒後にアバターが再表示されて録音を再生します。
