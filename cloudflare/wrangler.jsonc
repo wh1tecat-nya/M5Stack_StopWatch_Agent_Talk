@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "sumi-stopwatch-text",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-06",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "preview_urls": false,
+  "triggers": { "crons": ["0 * * * *"] },
+  "observability": {
+    "logs": { "enabled": true, "invocation_logs": false }
+  },
+  "kv_namespaces": [
+    { "binding": "OAUTH_KV", "id": "00000000000000000000000000000000" }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sumi-stopwatch-text",
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}

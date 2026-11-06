@@ -3,3 +3,8 @@ __pycache__/
 *.sqlite3*
 .env
 .DS_Store
+/cloudflare/node_modules/
+/cloudflare/.wrangler/
+/cloudflare/.dev.vars*
+/cloudflare/.env*
+/cloudflare/wrangler.deploy.jsonc
