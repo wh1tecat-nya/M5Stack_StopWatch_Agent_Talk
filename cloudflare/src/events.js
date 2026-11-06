@@ -43,7 +43,8 @@ function callbackUrl(value, allowedHost) {
   const url = new URL(value);
   if (url.protocol !== "https:" || url.port || url.username || url.password || url.hash ||
       !/^(?:[a-z0-9-]+\.)*(?:openai|chatgpt)\.com$/.test(url.hostname)) {
-    throw new Error("Invalid callback URL");
+    const hostname = /^[a-z0-9.-]{1,253}$/.test(url.hostname) ? url.hostname : undefined;
+    throw new RpcError(-32602, "Invalid callback URL", { reason: "invalid_callback_url", hostname });
   }
   if (url.hostname !== allowedHost) {
     throw new RpcError(-32015, "OpenAI callback host needs operator approval", {
@@ -98,15 +99,21 @@ export async function subscribe(env, params, remove) {
   if (params?.name !== EVENT || params.arguments?.device_id !== DEVICE ||
       Object.keys(params.arguments).length !== 1 || delivery?.mode !== "webhook" ||
       params.cursor != null) {
-    throw new RpcError(-32602, "Invalid subscription");
+    throw new RpcError(-32602, "Invalid subscription", { reason: "invalid_subscription" });
   }
   let url;
   try {
     url = callbackUrl(delivery.url, env.CALLBACK_HOST).href;
-    if (!remove) signingBytes(delivery.secret);
   } catch (error) {
     if (error instanceof RpcError) throw error;
-    throw new RpcError(-32602, "Callback URL or signing secret is invalid");
+    throw new RpcError(-32602, "Invalid callback URL", { reason: "invalid_callback_url" });
+  }
+  if (!remove) {
+    try {
+      signingBytes(delivery.secret);
+    } catch {
+      throw new RpcError(-32602, "Invalid signing secret", { reason: "invalid_signing_secret" });
+    }
   }
   const id = "sub_" + (await sha256(JSON.stringify([DEVICE, EVENT, url]))).slice(0, 32);
   if (remove) {
@@ -129,13 +136,16 @@ export async function subscribe(env, params, remove) {
         "verify_" + crypto.randomUUID(), { type: "verification", challenge });
       if (!response.ok) {
         await response.body?.cancel();
-        throw new Error("Callback rejected verification");
+        throw new RpcError(-32015, "Callback rejected verification", {
+          reason: "challenge_rejected", status: response.status,
+        });
       }
       const received = JSON.parse(await readText(response, 8192)).challenge;
       if (typeof received !== "string" || !await equalSecret(received, challenge)) {
         throw new Error("Callback verification mismatch");
       }
     } catch (error) {
+      if (error instanceof RpcError) throw error;
       const reason = error.name === "TimeoutError" ? "timeout" : "challenge_failed";
       throw new RpcError(-32015, "Callback verification failed", { reason });
     }

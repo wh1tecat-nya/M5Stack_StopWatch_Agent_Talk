@@ -45,7 +45,14 @@ async function rpc(env, method, params) {
       return { events: [eventDefinition] };
     case "events/subscribe":
       console.info(JSON.stringify({ event: "stopwatch_subscription_requested" }));
-      return subscribe(env, params, false);
+      try {
+        return await subscribe(env, params, false);
+      } catch (error) {
+        if (error instanceof RpcError) {
+          console.warn(JSON.stringify({ event: "stopwatch_subscription_rejected", code: error.code, ...error.data }));
+        }
+        throw error;
+      }
     case "events/unsubscribe":
       return subscribe(env, params, true);
     case "tools/list":
