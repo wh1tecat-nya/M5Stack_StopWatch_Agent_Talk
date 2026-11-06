@@ -126,7 +126,12 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   assert.ok((await rpc("initialize", { protocolVersion: "2025-03-26" })).result.capabilities.events);
   assert.deepEqual((await rpc("server/discover")).result.supportedVersions, ["2026-07-28"]);
   assert.equal((await rpc("events/list")).result.events[0].name, "stopwatch.message");
-  const statusTool = (await rpc("tools/list")).result.tools.find((tool) => tool.name === "get_stopwatch_status");
+  const tools = (await rpc("tools/list")).result.tools;
+  for (const tool of tools) {
+    assert.deepEqual(tool.securitySchemes, [{ type: "oauth2", scopes: ["mcp:stopwatch"] }]);
+    assert.deepEqual(tool._meta.securitySchemes, tool.securitySchemes);
+  }
+  const statusTool = tools.find((tool) => tool.name === "get_stopwatch_status");
   assert.equal(statusTool.annotations.readOnlyHint, true);
   const status = async () => (await rpc("tools/call", { name: statusTool.name })).result.structuredContent;
   assert.deepEqual(await status(), { device_id: "stopwatch", event: "stopwatch.message", subscription_active: false });

@@ -3,6 +3,7 @@ import { InputError, json, readText } from "./http.js";
 import { submitReply } from "./turns.js";
 
 export const SCOPE = "mcp:stopwatch";
+const securitySchemes = [{ type: "oauth2", scopes: [SCOPE] }];
 const serverInfo = { name: "sumi-stopwatch-text", version: "0.1.0" };
 const capabilities = { events: {}, tools: {} };
 const versions = ["2025-03-26", "2025-06-18", "2025-11-25"];
@@ -23,6 +24,11 @@ const statusTool = {
   },
   annotations: { readOnlyHint: true, openWorldHint: false },
 };
+const tools = [statusTool, replyTool].map((tool) => ({
+  ...tool,
+  securitySchemes,
+  _meta: { securitySchemes },
+}));
 
 async function rpc(env, method, params) {
   switch (method) {
@@ -43,7 +49,7 @@ async function rpc(env, method, params) {
     case "events/unsubscribe":
       return subscribe(env, params, true);
     case "tools/list":
-      return { tools: [statusTool, replyTool] };
+      return { tools };
     case "tools/call": {
       if (params.name === statusTool.name) {
         const status = {
