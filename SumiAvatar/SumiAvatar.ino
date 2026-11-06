@@ -10,6 +10,8 @@ namespace {
 enum class Mode { Badge, Conversation, Recording, Sending, Speaking };
 
 constexpr int kFrameSize = 400;
+constexpr int kPortraitSize = 360;
+constexpr int kPortraitInset = (kFrameSize - kPortraitSize) / 2;
 constexpr size_t kCaptureChunk = VoiceLink::kRecordRate / 50;
 constexpr uint32_t kIdleMs = 15000;
 constexpr uint32_t kPollMs = 3000;
@@ -25,6 +27,7 @@ constexpr const char* kRecordPrompt = kAudioBench ? "Audio test - A: Record" : "
 constexpr uint32_t kBenchReplyDelayMs = kIdleMs + 1000;
 
 M5Canvas frame(&M5.Display);
+M5Canvas portrait(&M5.Display);
 Mode mode = Mode::Badge;
 bool ready = false;
 bool wifiConfigured = false;
@@ -48,10 +51,21 @@ VoiceLink::Request upload{};
 VoiceLink::Result reply{};
 VoiceLink::Request ack{};
 
-bool drawPose(bool eyesClosed) {
+void drawPose(bool eyesClosed, int mouth) {
   frame.fillScreen(TFT_WHITE);
-  return eyesClosed ? frame.drawPng(kSumiClosedEyes, sizeof(kSumiClosedEyes))
-                    : frame.drawPng(kSumiNormal, sizeof(kSumiNormal));
+  portrait.pushSprite(&frame, kPortraitInset, kPortraitInset);
+  if (eyesClosed) {
+    const auto skin = frame.color565(250, 224, 216);
+    const auto lashes = frame.color565(94, 63, 64);
+    frame.fillEllipse(183, 169, 16, 12, skin);
+    frame.fillEllipse(235, 171, 16, 12, skin);
+    frame.fillEllipse(183, 169, 12, 1, lashes);
+    frame.fillEllipse(235, 171, 12, 1, lashes);
+  }
+  if (mouth > 0) {
+    frame.fillEllipse(207, 200, 10, 7, frame.color565(253, 237, 230));
+    frame.fillEllipse(207, 200, 7, mouth, frame.color565(138, 76, 79));
+  }
 }
 
 void enter(Mode next, const char* status = "") {
@@ -60,7 +74,8 @@ void enter(Mode next, const char* status = "") {
   M5.Display.setBrightness(mode == Mode::Badge ? 20 : 64);
   M5.Display.fillScreen(TFT_WHITE);
   if (mode == Mode::Badge) {
-    drawPose(false);
+    frame.fillScreen(TFT_WHITE);
+    frame.drawPng(kSumiBadge, sizeof(kSumiBadge));
     frame.pushSprite((M5.Display.width() - kFrameSize) / 2,
                      (M5.Display.height() - kFrameSize) / 2);
   } else {
@@ -204,7 +219,7 @@ void renderAvatar(uint32_t now) {
     const size_t index = size_t(elapsed) * kSpeechRate / 1000;
     if (index < reply.samples) {
       const size_t count = std::min(reply.samples - index, kSpeechRate / 50);
-      mouth = std::min(10, signalLevel(audio + index, count) / 350);
+      mouth = std::min(6, signalLevel(audio + index, count) / 350);
     }
   }
   const bool newMode = mode != previousMode || modeStarted != previousStart;
@@ -212,11 +227,7 @@ void renderAvatar(uint32_t now) {
     return;
   }
   if (newMode || eyesClosed != previousEyes || mouth != previousMouth) {
-    drawPose(eyesClosed);
-    if (mouth) {
-      frame.fillRect(185, 213, 30, 15, TFT_WHITE);
-      frame.fillEllipse(200, 219, 9, mouth, TFT_DARKGREY);
-    }
+    drawPose(eyesClosed, mouth);
   }
   M5.Display.startWrite();
   if (!newMode && y > previousY) {
@@ -296,7 +307,11 @@ void setup() {
   M5.Speaker.end();
   frame.setColorDepth(16);
   frame.setPsram(true);
-  if (!frame.createSprite(kFrameSize, kFrameSize) || !drawPose(false)) {
+  portrait.setColorDepth(16);
+  portrait.setPsram(true);
+  if (!frame.createSprite(kFrameSize, kFrameSize) ||
+      !portrait.createSprite(kPortraitSize, kPortraitSize) ||
+      !portrait.drawPng(kSumiAvatar, sizeof(kSumiAvatar))) {
     return;
   }
 
