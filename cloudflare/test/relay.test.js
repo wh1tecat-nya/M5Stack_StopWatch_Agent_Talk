@@ -23,6 +23,7 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   });
   const events = [];
   let deliveryStatus = 503;
+  let transcriptions = 0;
   const worker = new Miniflare(convertV4MiniflareOptions({
     modules: true,
     script: await readFile(join(work, "index.js"), "utf8"),
@@ -35,8 +36,19 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
       CALLBACK_HOST: "callbacks.openai.com",
       OWNER_KEY,
       DEVICE_TOKEN,
+      OPENAI_API_KEY: "audio-fixture-key",
     },
     outboundService: async (request) => {
+      if (request.url === "https://api.openai.com/v1/audio/transcriptions") {
+        transcriptions++;
+        const form = await request.formData();
+        assert.equal(form.get("model"), "gpt-transcribe");
+        const audio = Buffer.from(await form.get("file").arrayBuffer());
+        assert.equal(audio.toString("ascii", 0, 4), "RIFF");
+        assert.equal(audio.readUInt32LE(24), 16000);
+        assert.equal(audio.readUInt32LE(40), 6400);
+        return Response.json({ text: "こんにちは、すみ。" });
+      }
       assert.equal(request.url, CALLBACK);
       const body = await request.text();
       const headers = request.headers;
@@ -53,9 +65,11 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   t.after(() => worker.dispose());
 
   const db = await worker.getD1Database("DB");
-  const sql = await readFile(new URL("../migrations/0001_text_probe.sql", import.meta.url), "utf8");
-  await db.batch(sql.split(";").map((statement) => statement.trim()).filter(Boolean)
-    .map((statement) => db.prepare(statement)));
+  for (const file of ["0001_text_probe.sql", "0002_audio_turns.sql"]) {
+    const sql = await readFile(new URL("../migrations/" + file, import.meta.url), "utf8");
+    await db.batch(sql.split(";").map((statement) => statement.trim()).filter(Boolean)
+      .map((statement) => db.prepare(statement)));
+  }
   const fetch = (path, init) => worker.dispatchFetch(ORIGIN + path, init);
   const jsonPost = (path, body, headers = {}) => fetch(path, {
     method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json", ...headers },
@@ -165,6 +179,36 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   assert.ok((await rpc("tools/call", reply)).result);
   assert.ok((await rpc("tools/call", reply)).result);
   assert.deepEqual(await (await device("GET")).json(), { status: "ready", answer: "届いたよ" });
+
+  const audioId = "d".repeat(32);
+  const audioPath = "/device/turns/" + audioId;
+  const deviceHeaders = { Authorization: "Bearer " + DEVICE_TOKEN };
+  const putAudio = () => fetch(audioPath, {
+    method: "PUT",
+    headers: { ...deviceHeaders, "Content-Type": "application/octet-stream" },
+    body: new Uint8Array(6400),
+  });
+  const poll = () => fetch("/device/replies/next", { headers: deviceHeaders });
+  assert.equal((await fetch(audioPath, { method: "PUT" })).status, 401);
+  assert.equal((await putAudio()).status, 202);
+  assert.equal((await putAudio()).status, 202);
+  for (let attempt = 0; attempt < 50 && events.length < 3; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(transcriptions, 1);
+  assert.deepEqual(events.at(-1).data, { device_id: "stopwatch", request_id: audioId, text: "こんにちは、すみ。" });
+  assert.equal((await poll()).status, 204);
+  const audioReply = { name: "submit_stopwatch_reply", arguments: { request_id: audioId, text: "聞こえたよ。" } };
+  assert.ok((await rpc("tools/call", audioReply)).result);
+  const playback = await poll();
+  assert.equal(playback.headers.get("X-Reply-Id"), audioId);
+  assert.equal(playback.headers.get("Content-Type"), "text/plain; charset=utf-8");
+  assert.equal(await playback.text(), "聞こえたよ。");
+  const ack = () => fetch("/device/replies/" + audioId, { method: "DELETE", headers: deviceHeaders });
+  assert.equal((await ack()).status, 204);
+  assert.equal((await ack()).status, 204);
+  assert.equal((await poll()).status, 204);
+  assert.equal((await fetch("/device/text-turns/" + audioId, { headers: deviceHeaders })).status, 404);
   assert.ok((await rpc("events/unsubscribe", parameters)).result);
   const next = await fetch("/device/text-turns/" + "c".repeat(32), {
     method: "PUT", headers: { Authorization: "Bearer " + DEVICE_TOKEN },

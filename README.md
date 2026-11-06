@@ -11,6 +11,14 @@ StopWatch C152から、設定した2.4 GHz Wi-Fiを経由して、既存のChatG
 
 ## 開発と接続
 
+Cloudflare Worker構成では、録音を `gpt-transcribe` で文字起こしし、すみの返答テキストをStopWatchに戻します。StopWatchはsanoTTS-jpで音声を生成します。[Workerの設定](cloudflare/README.md)
+
+このワークスペースでWorkerのURLと端末トークンを `cloudflare/.env.text-probe.json` に用意済みの場合は、`python3 tools/configure_stopwatch.py /path/to/root-ca.pem` でWi-Fi設定を対話入力できます。設定は端末ファームウェアをビルドする前に行います。
+
+本体で読み上げるビルドには、[sanoTTS-jp v1.2.0](https://github.com/ayutaz/sanoTTS-jp/releases/tag/v1.2.0) のArduinoライブラリと `sanoTTS-jp-voice-tsukuyomi-v4.zip` を使います。ビルド時はC++に `-DSUMI_SANOTTS -DSANOTTS_ARENA_HEAP=1`、Cに `-DSANOTTS_ARENA_HEAP=1` を指定します。`SumiAvatar/partitions.csv` の `dict` は既定のFFat領域を使用するため、書き込み前に実機のフラッシュをバックアップしてください。パーティション表とアプリを書き込んだ後、公式リリースの `k1-dict-213000-8mb-m5.bin` を辞書領域 `0x610000` に書き込みます。音声モデルと生成音声には[モデルライセンス](https://github.com/ayutaz/sanoTTS-jp/blob/v1.2.0/LICENSE-MODEL.md)が適用されます。
+
+### Python版でのローカル検証
+
 1. Arduino IDEで `SumiAvatar/SumiAvatar.ino` を開きます。ESP32 Arduino Core 3.3.7、M5Unified 0.3.0、M5GFX 0.3.0でビルドを確認しました。ボードは `ESP32-S3-Box`、フラッシュは16 MB、PSRAMはOPIです。
 2. `SumiAvatar/stopwatch_config.example.h` を同じフォルダの `stopwatch_config.h` にコピーし、SSID、Wi-Fiパスワード、中継のHTTPS URL、端末トークン、TLSのルートCAを設定します。設定ファイルはGitの対象外です。設定なしでも待機画面とアバター表示をビルドできます。
 3. 中継をPython 3.11以降で `python3 -m relay.server --database /path/to/sumi.sqlite3` として起動します。環境変数に `SUMI_DEVICE_TOKEN`、`SUMI_MCP_TOKEN`、`OPENAI_API_KEY`、`SUMI_CALLBACK_HOST` を設定します。トークンは別々の32文字以上のランダム値とし、許可するMCPコールバックのホスト名を指定します。中継は録音を `gpt-transcribe` で文字起こしし、返答を `gpt-4o-mini-tts` で音声化します。読み上げの声は `SUMI_TTS_VOICE` で指定できます。初期値は `marin` です。

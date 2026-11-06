@@ -29,6 +29,34 @@ export async function readText(message, limit) {
   }
 }
 
+export async function readBytes(message, limit) {
+  if (!message.body) return new Uint8Array();
+  const reader = message.body.getReader();
+  const chunks = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.byteLength;
+      if (length > limit) throw new InputError("Body too large");
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 export async function equalSecret(left, right) {
   const [leftDigest, rightDigest] = await Promise.all(
     [left, right].map((value) => crypto.subtle.digest("SHA-256", encoder.encode(value))),

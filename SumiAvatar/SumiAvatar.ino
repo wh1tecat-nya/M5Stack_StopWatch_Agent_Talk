@@ -22,7 +22,6 @@ constexpr bool kAudioBench = true;
 #else
 constexpr bool kAudioBench = false;
 #endif
-constexpr size_t kSpeechRate = kAudioBench ? VoiceLink::kRecordRate : VoiceLink::kPlaybackRate;
 constexpr const char* kRecordPrompt = kAudioBench ? "Audio test - A: Record" : "A: Record";
 constexpr uint32_t kBenchReplyDelayMs = kIdleMs + 1000;
 
@@ -114,7 +113,7 @@ void inspectRecording(size_t done) {
 void playSpeech(const int16_t* audio, size_t samples, const char* status) {
   enter(Mode::Speaking, status);
   M5.Speaker.setVolume(kVolume);
-  if (!M5.Speaker.playRaw(audio, samples, kSpeechRate)) {
+  if (!M5.Speaker.playRaw(audio, samples, reply.sampleRate)) {
     M5.Speaker.end();
     enter(Mode::Conversation, "Speaker error");
   }
@@ -130,6 +129,7 @@ void finishRecording(bool failed = false) {
   }
   if (kAudioBench) {
     reply.samples = samples;
+    reply.sampleRate = VoiceLink::kRecordRate;
     benchQueuedAt = millis();
     benchReplyPending = true;
     enter(Mode::Sending, "Replay in 16s");
@@ -216,9 +216,9 @@ void renderAvatar(uint32_t now) {
   int mouth = 0;
   if (mode == Mode::Speaking) {
     const int16_t* audio = kAudioBench ? recording : playback;
-    const size_t index = size_t(elapsed) * kSpeechRate / 1000;
+    const size_t index = size_t(elapsed) * reply.sampleRate / 1000;
     if (index < reply.samples) {
-      const size_t count = std::min(reply.samples - index, kSpeechRate / 50);
+      const size_t count = std::min(reply.samples - index, size_t(reply.sampleRate / 50));
       mouth = std::min(6, signalLevel(audio + index, count) / 350);
     }
   }
@@ -260,17 +260,19 @@ void updateNetwork(uint32_t now) {
           nextNetworkMs = now + 1000;
         } else {
           uploadPending = false;
-          enter(Mode::Conversation, result.status == 409 ? "Sumi link unavailable" : "Send failed");
+          const char* error = result.status == 409 ? "Sumi link unavailable"
+              : result.status == 424 ? "Audio service not set" : "Send failed";
+          enter(Mode::Conversation, error);
         }
         break;
       case VoiceLink::Job::Poll:
         if (result.status == 200) {
           reply = result;
           replyPending = true;
-        } else if (result.status == 422) {
+        } else if (result.status == 422 || result.status == 415) {
           acknowledgeReply(result.request);
           if (mode != Mode::Recording && mode != Mode::Sending) {
-            enter(Mode::Conversation, "Sumi reply failed");
+            enter(Mode::Conversation, result.status == 415 ? "Local speech failed" : "Sumi reply failed");
           }
         }
         break;

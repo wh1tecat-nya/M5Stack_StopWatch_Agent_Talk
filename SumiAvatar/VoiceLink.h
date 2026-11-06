@@ -20,6 +20,7 @@ struct Result {
   Request request;
   int status;
   size_t samples;
+  uint32_t sampleRate;
 };
 
 bool begin(int16_t* recording, int16_t* playback);

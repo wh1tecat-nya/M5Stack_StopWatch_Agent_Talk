@@ -1,4 +1,5 @@
 #include "VoiceLink.h"
+#include "LocalSpeech.h"
 
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -73,8 +74,20 @@ void exchange(Result& result) {
     if (result.status == 200) {
       const int length = http.getSize();
       const String id = http.header("X-Reply-Id");
-      if (!validId(id) || http.header("Content-Type") != "application/octet-stream" ||
-          length <= 0 || length % 2 || size_t(length) > kPlaybackSamples * sizeof(int16_t)) {
+      const String type = http.header("Content-Type");
+      const bool textReply = type == "text/plain; charset=utf-8";
+      char text[513];
+      if (!validId(id) || length <= 0) {
+        result.status = -2;
+        return;
+      }
+      id.toCharArray(result.request.id, sizeof(result.request.id));
+      if (textReply && size_t(length) >= sizeof(text)) {
+        result.status = 415;
+        return;
+      }
+      if (!textReply && (type != "application/octet-stream" || length % 2 ||
+                         size_t(length) > kPlaybackSamples * sizeof(int16_t))) {
         result.status = -2;
         return;
       }
@@ -86,7 +99,7 @@ void exchange(Result& result) {
       }
       size_t received = 0;
       const uint32_t start = millis();
-      auto* bytes = reinterpret_cast<uint8_t*>(playback);
+      auto* bytes = reinterpret_cast<uint8_t*>(textReply ? static_cast<void*>(text) : playback);
       while (received < size_t(length) && millis() - start < 12000) {
         const int available = stream->available();
         if (available > 0) {
@@ -104,8 +117,16 @@ void exchange(Result& result) {
         result.status = -2;
         return;
       }
-      id.toCharArray(result.request.id, sizeof(result.request.id));
-      result.samples = received / sizeof(int16_t);
+      if (textReply) {
+        text[received] = '\0';
+        http.end();
+        result.samples = LocalSpeech::synthesize(text, playback, kPlaybackSamples);
+        result.sampleRate = LocalSpeech::kSampleRate;
+        if (!result.samples) result.status = 415;
+      } else {
+        result.samples = received / sizeof(int16_t);
+        result.sampleRate = kPlaybackRate;
+      }
     }
   }
 }

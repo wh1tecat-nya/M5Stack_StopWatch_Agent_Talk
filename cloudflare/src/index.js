@@ -1,4 +1,5 @@
 import { AuthorizationError, OAuthProvider } from "@cloudflare/workers-oauth-provider";
+import { handleAudio } from "./audio-turns.js";
 import { TURN_ID } from "./events.js";
 import { equalSecret, InputError, json, readText } from "./http.js";
 import { mcp, SCOPE } from "./mcp.js";
@@ -92,9 +93,15 @@ export default {
         apiRoute: "/mcp",
         apiHandler: mcp,
         defaultHandler: {
-          async fetch(request, providerEnv) {
+          async fetch(request, providerEnv, execution) {
             const path = new URL(request.url).pathname;
             if (path === "/authorize") return authorize(request, providerEnv, origin, redirectUri);
+            if (path === "/device/replies/next") return handleAudio(request, providerEnv, execution, "next");
+            for (const [prefix, operation] of [["/device/turns/", "upload"], ["/device/replies/", "ack"]]) {
+              if (path.startsWith(prefix) && TURN_ID.test(path.slice(prefix.length))) {
+                return handleAudio(request, providerEnv, execution, operation, path.slice(prefix.length));
+              }
+            }
             const id = path.slice("/device/text-turns/".length);
             if (path.startsWith("/device/text-turns/") && TURN_ID.test(id)) {
               return handleTurn(request, providerEnv, id);

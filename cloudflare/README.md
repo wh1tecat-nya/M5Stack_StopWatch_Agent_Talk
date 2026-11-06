@@ -1,6 +1,6 @@
 # すみとStopWatchの接続テスト
 
-固定文を既存のすみの会話に通知し、すみが返答ツールで返した短文を端末用のHTTPS APIから受け取る。最初の疎通ではPCのターミナルをテスト端末として使う。中継はCloudflare Workers上で動く。音声APIキーは不要。
+Cloudflare Workers上で固定文の疎通テストと、StopWatchの録音を文字起こししてすみに届ける機能を提供する。すみが返した短文はHTTPSでStopWatchに戻し、本体で読み上げる。固定文の疎通確認には音声APIキーは不要。
 
 ## ローカル検証
 
@@ -42,3 +42,13 @@ npx wrangler secret put DEVICE_TOKEN --config wrangler.deploy.jsonc
 4. 同じ認証とIDで `GET /device/text-turns/{id}` を実行する。`status` が `ready` になり、`answer` にすみの返答が入れば疎通成功。リクエストの有効期限は10分。
 
 [OpenAIのMCP Events仕様](https://developers.openai.com/plugins/build/mcp-events)
+
+## StopWatchからの録音を受け付ける
+
+音声認識に使うOpenAI APIキーをWorkerのシークレットに登録する。
+
+```sh
+npx wrangler secret put OPENAI_API_KEY --config wrangler.deploy.jsonc
+```
+
+既存のすみが開始したクラウド作業で `stopwatch.message` を購読する。イベントの `text` に対して日本語で短く返答し、同じ `request_id` と返答文を `submit_stopwatch_reply` に渡すよう設定する。返答は1〜2文、80文字程度を目安にする。録音は認証済みの `PUT /device/turns/{id}` で受け付け、16 kHz・モノラル・符号付き16ビットリトルエンディアンPCMに対応する。StopWatchは `GET /device/replies/next` で返答テキストを受け取り、本体で音声化する。再生後の受領通知で中継の録音とテキストを消去する。

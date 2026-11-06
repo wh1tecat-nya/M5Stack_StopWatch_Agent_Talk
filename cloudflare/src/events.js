@@ -19,7 +19,7 @@ function schema(properties) {
 
 export const eventDefinition = {
   name: EVENT,
-  description: "A fixed-text connection test from the owner's C152 project.",
+  description: "A text message or connection probe from the owner's C152.",
   delivery: ["webhook"],
   inputSchema: schema({ device_id: { type: "string", enum: [DEVICE] } }),
   payloadSchema: schema({
@@ -182,7 +182,7 @@ export async function deliver(env, subscription, turn) {
     eventId,
     name: EVENT,
     timestamp: new Date(turn.created).toISOString(),
-    data: { device_id: DEVICE, request_id: turn.id, text: FIXTURE },
+    data: { device_id: DEVICE, request_id: turn.id, text: turn.transcript ?? FIXTURE },
     cursor: null,
   });
   await response.body?.cancel();
