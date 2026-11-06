@@ -126,6 +126,10 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   assert.ok((await rpc("initialize", { protocolVersion: "2025-03-26" })).result.capabilities.events);
   assert.deepEqual((await rpc("server/discover")).result.supportedVersions, ["2026-07-28"]);
   assert.equal((await rpc("events/list")).result.events[0].name, "stopwatch.message");
+  const statusTool = (await rpc("tools/list")).result.tools.find((tool) => tool.name === "get_stopwatch_status");
+  assert.equal(statusTool.annotations.readOnlyHint, true);
+  const status = async () => (await rpc("tools/call", { name: statusTool.name })).result.structuredContent;
+  assert.deepEqual(await status(), { device_id: "stopwatch", event: "stopwatch.message", subscription_active: false });
 
   const id = "ab".repeat(16);
   const path = "/device/text-turns/" + id;
@@ -142,6 +146,7 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   assert.equal(lookalike.error?.code, -32602);
   const subscribed = await rpc("events/subscribe", parameters);
   assert.ok(subscribed.result?.id, JSON.stringify(subscribed.error));
+  assert.equal((await status()).subscription_active, true);
   assert.equal((await device("PUT")).status, 503);
   deliveryStatus = 202;
   assert.equal((await device("PUT")).status, 202);

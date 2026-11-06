@@ -1,4 +1,4 @@
-import { eventDefinition, replyTool, RpcError, subscribe, TURN_ID } from "./events.js";
+import { DEVICE, EVENT, eventDefinition, getSubscription, replyTool, RpcError, subscribe, TURN_ID } from "./events.js";
 import { InputError, json, readText } from "./http.js";
 import { submitReply } from "./turns.js";
 
@@ -6,6 +6,23 @@ export const SCOPE = "mcp:stopwatch";
 const serverInfo = { name: "sumi-stopwatch-text", version: "0.1.0" };
 const capabilities = { events: {}, tools: {} };
 const versions = ["2025-03-26", "2025-06-18", "2025-11-25"];
+const statusTool = {
+  name: "get_stopwatch_status",
+  title: "Check StopWatch connection",
+  description: "Check the fixed-text relay connection and whether the StopWatch event has an active subscription.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  outputSchema: {
+    type: "object",
+    properties: {
+      device_id: { type: "string" },
+      event: { type: "string" },
+      subscription_active: { type: "boolean" },
+    },
+    required: ["device_id", "event", "subscription_active"],
+    additionalProperties: false,
+  },
+  annotations: { readOnlyHint: true, openWorldHint: false },
+};
 
 async function rpc(env, method, params) {
   switch (method) {
@@ -21,12 +38,22 @@ async function rpc(env, method, params) {
     case "events/list":
       return { events: [eventDefinition] };
     case "events/subscribe":
+      console.info(JSON.stringify({ event: "stopwatch_subscription_requested" }));
       return subscribe(env, params, false);
     case "events/unsubscribe":
       return subscribe(env, params, true);
     case "tools/list":
-      return { tools: [replyTool] };
+      return { tools: [statusTool, replyTool] };
     case "tools/call": {
+      if (params.name === statusTool.name) {
+        const status = {
+          device_id: DEVICE,
+          event: EVENT,
+          subscription_active: Boolean(await getSubscription(env)),
+        };
+        console.info(JSON.stringify({ event: "stopwatch_status_checked" }));
+        return { content: [{ type: "text", text: JSON.stringify(status) }], structuredContent: status };
+      }
       if (params.name !== replyTool.name) throw new RpcError(-32602, "Unknown tool");
       const { request_id: id, text } = params.arguments ?? {};
       const answer = typeof text === "string" ? text.trim() : "";
