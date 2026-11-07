@@ -8,17 +8,22 @@
 
 namespace {
 
-enum class Mode { Badge, Conversation, Recording, Sending, Speaking };
+enum class Mode { Badge, Conversation, Recording, Sending, Waiting, Speaking };
 
 constexpr int kFrameSize = 400;
 constexpr int kPortraitSize = 360;
 constexpr int kPortraitInset = (kFrameSize - kPortraitSize) / 2;
 constexpr size_t kCaptureChunk = VoiceLink::kRecordRate / 50;
 constexpr uint32_t kIdleMs = 15000;
+constexpr uint32_t kBadgeDimMs = 30000;
+constexpr uint8_t kBright = 64;
+constexpr uint8_t kDim = 20;
 constexpr uint32_t kPollMs = 3000;
 constexpr uint32_t kActivePollMs = 750;
+constexpr uint32_t kFastWaitMs = 120000;
+constexpr uint32_t kReplyTimeoutMs = 600000;  // Worker turn lifetime.
 constexpr uint32_t kAudioIdleMs = 750;
-constexpr uint8_t kVolume = 144;
+constexpr uint8_t kVolume = 190;
 #ifdef SUMI_AUDIO_BENCH
 constexpr bool kAudioBench = true;
 #else
@@ -42,12 +47,12 @@ uint32_t modeStarted = 0;
 uint32_t lastFrame = 0;
 uint32_t benchQueuedAt = 0;
 bool benchReplyPending = false;
+bool badgeDimmed = false;
 bool captureStopped = false;
 bool audioRailOn = false;
 uint32_t audioIdleSince = 0;
 uint32_t lastSpeakerActiveMs = 0;
 uint32_t speakerDrainMs = 0;
-uint32_t fastPollUntil = 0;
 const char* modeStatus = "";
 int16_t* recording = nullptr;
 int16_t* playback = nullptr;
@@ -57,20 +62,20 @@ VoiceLink::Request upload{};
 VoiceLink::Result reply{};
 VoiceLink::Request ack{};
 
-void drawPose(bool eyesClosed, int mouth) {
+void drawPose(bool eyesClosed, int mouth, int offsetX) {
   frame.fillScreen(TFT_WHITE);
-  portrait.pushSprite(&frame, kPortraitInset, kPortraitInset);
+  portrait.pushSprite(&frame, kPortraitInset + offsetX, kPortraitInset);
   if (eyesClosed) {
     const auto skin = frame.color565(250, 224, 216);
     const auto lashes = frame.color565(94, 63, 64);
-    frame.fillEllipse(183, 169, 16, 12, skin);
-    frame.fillEllipse(235, 171, 16, 12, skin);
-    frame.fillEllipse(183, 169, 12, 1, lashes);
-    frame.fillEllipse(235, 171, 12, 1, lashes);
+    frame.fillEllipse(183 + offsetX, 169, 16, 12, skin);
+    frame.fillEllipse(235 + offsetX, 171, 16, 12, skin);
+    frame.fillEllipse(183 + offsetX, 169, 12, 1, lashes);
+    frame.fillEllipse(235 + offsetX, 171, 12, 1, lashes);
   }
   if (mouth > 0) {
-    frame.fillEllipse(207, 200, 10, 7, frame.color565(253, 237, 230));
-    frame.fillEllipse(207, 200, 7, mouth, frame.color565(138, 76, 79));
+    frame.fillEllipse(207 + offsetX, 200, 10, 7, frame.color565(253, 237, 230));
+    frame.fillEllipse(207 + offsetX, 200, 7, mouth, frame.color565(138, 76, 79));
   }
 }
 
@@ -78,9 +83,10 @@ void enter(Mode next, const char* status = "") {
   mode = next;
   modeStatus = status;
   modeStarted = millis();
-  M5.Display.setBrightness(mode == Mode::Badge ? 20 : 64);
+  M5.Display.setBrightness(kBright);
   M5.Display.fillScreen(TFT_WHITE);
   if (mode == Mode::Badge) {
+    badgeDimmed = false;
     frame.fillScreen(TFT_WHITE);
     frame.drawPng(kSumiBadge, sizeof(kSumiBadge));
     frame.pushSprite((M5.Display.width() - kFrameSize) / 2,
@@ -148,7 +154,7 @@ void finishRecording(bool failed = false) {
     reply.sampleRate = VoiceLink::kRecordRate;
     benchQueuedAt = millis();
     benchReplyPending = true;
-    enter(Mode::Sending, "Replay in 16s");
+    enter(Mode::Waiting, "Replay in 16s");
     return;
   }
   upload = {VoiceLink::Job::Upload, samples, ""};
@@ -223,8 +229,10 @@ void renderAvatar(uint32_t now) {
   }
   const uint32_t elapsed = now - modeStarted;
   const bool eyesClosed = elapsed % 4000 >= 3850;
-  const int y = (M5.Display.height() - kFrameSize) / 2
-      + static_cast<int>(std::lround(4 * std::sin(6.2831853f * (elapsed % 2800) / 2800.0f)));
+  const double sway = std::sin(6.2831853 * (elapsed % 2800) / 2800.0);
+  const bool thinking = mode == Mode::Waiting;
+  const int offsetX = thinking ? std::lround(14 * sway) : 0;
+  const int y = (M5.Display.height() - kFrameSize) / 2 + (thinking ? 0 : std::lround(4 * sway));
   const int x = (M5.Display.width() - kFrameSize) / 2;
   static bool previousEyes = false;
   static Mode previousMode = Mode::Badge;
@@ -232,6 +240,7 @@ void renderAvatar(uint32_t now) {
   static int previousMouth = 0;
   static int previousLevel = 0;
   static int previousY = 0;
+  static int previousOffsetX = 0;
   int mouth = 0;
   int level = 0;
   if (mode == Mode::Recording && !captureStopped) {
@@ -249,11 +258,13 @@ void renderAvatar(uint32_t now) {
     }
   }
   const bool newMode = mode != previousMode || modeStarted != previousStart;
-  if (!newMode && y == previousY && eyesClosed == previousEyes && mouth == previousMouth && level == previousLevel) {
+  const bool redraw = newMode || offsetX != previousOffsetX || eyesClosed != previousEyes ||
+      mouth != previousMouth || level != previousLevel;
+  if (!redraw && y == previousY) {
     return;
   }
-  if (newMode || eyesClosed != previousEyes || mouth != previousMouth || level != previousLevel) {
-    drawPose(eyesClosed, mouth);
+  if (redraw) {
+    drawPose(eyesClosed, mouth, offsetX);
     frame.fillRoundRect(72, 347, 256, 40, 12, mode == Mode::Recording ? TFT_MAROON : TFT_WHITE);
     frame.setTextDatum(middle_center);
     frame.setTextSize(2);
@@ -274,6 +285,7 @@ void renderAvatar(uint32_t now) {
   frame.pushSprite(x, y);
   M5.Display.endWrite();
   previousY = y;
+  previousOffsetX = offsetX;
   previousEyes = eyesClosed;
   previousMode = mode;
   previousMouth = mouth;
@@ -290,11 +302,8 @@ void updateNetwork(uint32_t now) {
       case VoiceLink::Job::Upload:
         if (result.status == 202) {
           uploadPending = false;
-          fastPollUntil = now + 90000;
           nextNetworkMs = now;
-          if (mode != Mode::Badge) {
-            enter(Mode::Conversation, "Waiting for Sumi");
-          }
+          enter(Mode::Waiting, "Waiting for Sumi...");
         } else if ((result.status < 0 || result.status >= 500) && ++uploadAttempts < 3) {
           nextNetworkMs = now + 1000;
         } else {
@@ -306,11 +315,9 @@ void updateNetwork(uint32_t now) {
         break;
       case VoiceLink::Job::Poll:
         if (result.status == 200) {
-          fastPollUntil = 0;
           reply = result;
           replyPending = true;
         } else if (result.status == 422 || result.status == 415) {
-          fastPollUntil = 0;
           acknowledgeReply(result.request);
           if (mode != Mode::Recording && mode != Mode::Sending) {
             enter(Mode::Conversation, result.status == 415 ? "Local speech failed" : "Sumi reply failed");
@@ -334,7 +341,7 @@ void updateNetwork(uint32_t now) {
   }
   const VoiceLink::Request poll{VoiceLink::Job::Poll, 0, ""};
   networkBusy = VoiceLink::send(uploadPending ? upload : ackPending ? ack : poll);
-  const bool fastPoll = fastPollUntil && int32_t(fastPollUntil - now) > 0;
+  const bool fastPoll = mode == Mode::Waiting && millis() - modeStarted < kFastWaitMs;
   nextNetworkMs = now + (uploadPending ? 0 : fastPoll ? kActivePollMs : kPollMs);
 }
 
@@ -388,6 +395,15 @@ void loop() {
         startRecording();
       } else if (right) {
         enter(Mode::Conversation, kRecordPrompt);
+      } else if (M5.Touch.getCount() && M5.Touch.getDetail().isPressed()) {
+        modeStarted = now;
+        if (badgeDimmed) {
+          M5.Display.setBrightness(kBright);
+          badgeDimmed = false;
+        }
+      } else if (!badgeDimmed && now - modeStarted >= kBadgeDimMs) {
+        M5.Display.setBrightness(kDim);
+        badgeDimmed = true;
       }
       break;
     case Mode::Conversation:
@@ -405,8 +421,10 @@ void loop() {
       }
       break;
     case Mode::Sending:
-      if (now - modeStarted >= kIdleMs) {
-        enter(Mode::Badge);
+      break;
+    case Mode::Waiting:
+      if (!networkBusy && now - modeStarted >= kReplyTimeoutMs) {
+        enter(Mode::Conversation, "Sumi reply timed out");
       }
       break;
     case Mode::Speaking:
