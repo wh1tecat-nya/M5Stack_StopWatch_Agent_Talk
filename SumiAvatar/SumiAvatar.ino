@@ -1,6 +1,7 @@
 #include <M5Unified.h>
 #include <atomic>
 #include <cmath>
+#include <utility/M5IOE1_Class.hpp>
 
 #include "VoiceLink.h"
 #include "sumi_frames.h"
@@ -15,14 +16,15 @@ constexpr int kPortraitInset = (kFrameSize - kPortraitSize) / 2;
 constexpr size_t kCaptureChunk = VoiceLink::kRecordRate / 50;
 constexpr uint32_t kIdleMs = 15000;
 constexpr uint32_t kPollMs = 3000;
-constexpr int kVoiceThreshold = 450;
-constexpr uint8_t kVolume = 64;
+constexpr uint32_t kActivePollMs = 750;
+constexpr uint32_t kAudioIdleMs = 750;
+constexpr uint8_t kVolume = 104;
 #ifdef SUMI_AUDIO_BENCH
 constexpr bool kAudioBench = true;
 #else
 constexpr bool kAudioBench = false;
 #endif
-constexpr const char* kRecordPrompt = kAudioBench ? "Audio test - A: Record" : "A: Record";
+constexpr const char* kRecordPrompt = "Hold A to talk";
 constexpr uint32_t kBenchReplyDelayMs = kIdleMs + 1000;
 
 M5Canvas frame(&M5.Display);
@@ -40,11 +42,14 @@ uint32_t modeStarted = 0;
 uint32_t lastFrame = 0;
 uint32_t benchQueuedAt = 0;
 bool benchReplyPending = false;
+bool captureStopped = false;
+bool audioRailOn = false;
+uint32_t audioIdleSince = 0;
+uint32_t fastPollUntil = 0;
+const char* modeStatus = "";
 int16_t* recording = nullptr;
 int16_t* playback = nullptr;
 size_t queued = 0;
-size_t inspected = 0;
-size_t lastVoiceSample = 0;
 std::atomic<size_t> captured{0};
 VoiceLink::Request upload{};
 VoiceLink::Result reply{};
@@ -69,6 +74,7 @@ void drawPose(bool eyesClosed, int mouth) {
 
 void enter(Mode next, const char* status = "") {
   mode = next;
+  modeStatus = status;
   modeStarted = millis();
   M5.Display.setBrightness(mode == Mode::Badge ? 20 : 64);
   M5.Display.fillScreen(TFT_WHITE);
@@ -77,11 +83,6 @@ void enter(Mode next, const char* status = "") {
     frame.drawPng(kSumiBadge, sizeof(kSumiBadge));
     frame.pushSprite((M5.Display.width() - kFrameSize) / 2,
                      (M5.Display.height() - kFrameSize) / 2);
-  } else {
-    M5.Display.setTextDatum(middle_center);
-    M5.Display.setTextColor(TFT_DARKGREY, TFT_WHITE);
-    M5.Display.setTextSize(2);
-    M5.Display.drawString(status, M5.Display.width() / 2, M5.Display.height() - 43);
   }
 }
 
@@ -101,30 +102,38 @@ void captureReleased(void*, void*, size_t samples) {
   captured.fetch_add(samples, std::memory_order_release);
 }
 
-void inspectRecording(size_t done) {
-  while (inspected < done) {
-    if (signalLevel(recording + inspected, kCaptureChunk) >= kVoiceThreshold) {
-      lastVoiceSample = inspected + kCaptureChunk;
-    }
-    inspected += kCaptureChunk;
+void audioStopped() {
+  audioIdleSince = millis();
+}
+
+void muteIdleAudio(uint32_t now) {
+  if (audioRailOn && (mode != Mode::Recording || captureStopped) && mode != Mode::Speaking &&
+      now - audioIdleSince >= kAudioIdleMs) {
+    // C152 codec and mic supply. M5Unified enables it on the next audio start.
+    audioRailOn = !M5.getIOExpander(0).digitalWrite(m5::M5IOE1_Class::gpio3, false);
+    audioIdleSince = now;
   }
 }
 
 void playSpeech(const int16_t* audio, size_t samples, const char* status) {
   enter(Mode::Speaking, status);
+  audioRailOn = true;
   M5.Speaker.setVolume(kVolume);
   if (!M5.Speaker.playRaw(audio, samples, reply.sampleRate)) {
     M5.Speaker.end();
+    audioStopped();
     enter(Mode::Conversation, "Speaker error");
   }
 }
 
 void finishRecording(bool failed = false) {
-  M5.Mic.end();
+  if (!captureStopped) {
+    M5.Mic.end();
+    audioStopped();
+  }
   const size_t samples = captured.load(std::memory_order_acquire);
-  inspectRecording(samples);
-  if (failed || samples < VoiceLink::kRecordRate / 5 || !lastVoiceSample) {
-    enter(Mode::Conversation, failed ? "Mic error" : "No speech");
+  if (failed || samples < VoiceLink::kRecordRate / 5) {
+    enter(Mode::Conversation, failed ? "Mic error" : kRecordPrompt);
     return;
   }
   if (kAudioBench) {
@@ -139,17 +148,18 @@ void finishRecording(bool failed = false) {
   VoiceLink::newId(upload.id);
   uploadPending = true;
   uploadAttempts = 0;
+  nextNetworkMs = millis();
   enter(Mode::Sending, "Sending...");
 }
 
 void pumpRecording() {
+  if (captureStopped) return;
   const size_t done = captured.load(std::memory_order_acquire);
-  inspectRecording(done);
-  const bool quiet = lastVoiceSample
-      ? done - lastVoiceSample >= VoiceLink::kRecordRate * 9 / 10
-      : done >= VoiceLink::kRecordRate * 4;
-  if (quiet || done >= VoiceLink::kRecordSamples || millis() - modeStarted >= 17000) {
-    finishRecording();
+  if (done >= VoiceLink::kRecordSamples || millis() - modeStarted >= 17000) {
+    M5.Mic.end();
+    audioStopped();
+    captureStopped = true;
+    enter(Mode::Recording, "Limit - release to send");
     return;
   }
 
@@ -179,11 +189,12 @@ void startRecording() {
     enter(Mode::Conversation, "Upload pending");
     return;
   }
-  M5.Speaker.end();
+  audioRailOn = true;
+  captureStopped = false;
   captured = 0;
-  queued = inspected = lastVoiceSample = 0;
+  queued = 0;
   M5.Mic.setBufferReleaseCallback(nullptr, captureReleased);
-  enter(Mode::Recording, "Recording");
+  enter(Mode::Recording, "REC - release to send");
   pumpRecording();
 }
 
@@ -212,8 +223,16 @@ void renderAvatar(uint32_t now) {
   static Mode previousMode = Mode::Badge;
   static uint32_t previousStart = 0;
   static int previousMouth = 0;
+  static int previousLevel = 0;
   static int previousY = 0;
   int mouth = 0;
+  int level = 0;
+  if (mode == Mode::Recording && !captureStopped) {
+    const size_t done = captured.load(std::memory_order_acquire);
+    if (done >= kCaptureChunk) {
+      level = std::min(5, signalLevel(recording + done - kCaptureChunk, kCaptureChunk) / 400);
+    }
+  }
   if (mode == Mode::Speaking) {
     const int16_t* audio = kAudioBench ? recording : playback;
     const size_t index = size_t(elapsed) * reply.sampleRate / 1000;
@@ -223,11 +242,21 @@ void renderAvatar(uint32_t now) {
     }
   }
   const bool newMode = mode != previousMode || modeStarted != previousStart;
-  if (!newMode && y == previousY && eyesClosed == previousEyes && mouth == previousMouth) {
+  if (!newMode && y == previousY && eyesClosed == previousEyes && mouth == previousMouth && level == previousLevel) {
     return;
   }
-  if (newMode || eyesClosed != previousEyes || mouth != previousMouth) {
+  if (newMode || eyesClosed != previousEyes || mouth != previousMouth || level != previousLevel) {
     drawPose(eyesClosed, mouth);
+    frame.fillRoundRect(72, 347, 256, 40, 12, mode == Mode::Recording ? TFT_MAROON : TFT_WHITE);
+    frame.setTextDatum(middle_center);
+    frame.setTextSize(2);
+    frame.setTextColor(mode == Mode::Recording ? TFT_WHITE : TFT_DARKGREY);
+    frame.drawString(modeStatus, kFrameSize / 2, mode == Mode::Recording ? 359 : 367);
+    if (mode == Mode::Recording && !captureStopped) {
+      for (int index = 0; index < 5; ++index) {
+        frame.fillRect(151 + index * 20, 372, 17, 5, index < level ? TFT_GREEN : TFT_LIGHTGREY);
+      }
+    }
   }
   M5.Display.startWrite();
   if (!newMode && y > previousY) {
@@ -241,6 +270,7 @@ void renderAvatar(uint32_t now) {
   previousEyes = eyesClosed;
   previousMode = mode;
   previousMouth = mouth;
+  previousLevel = level;
   previousStart = modeStarted;
   lastFrame = now;
 }
@@ -253,6 +283,8 @@ void updateNetwork(uint32_t now) {
       case VoiceLink::Job::Upload:
         if (result.status == 202) {
           uploadPending = false;
+          fastPollUntil = now + 90000;
+          nextNetworkMs = now;
           if (mode != Mode::Badge) {
             enter(Mode::Conversation, "Waiting for Sumi");
           }
@@ -267,9 +299,11 @@ void updateNetwork(uint32_t now) {
         break;
       case VoiceLink::Job::Poll:
         if (result.status == 200) {
+          fastPollUntil = 0;
           reply = result;
           replyPending = true;
         } else if (result.status == 422 || result.status == 415) {
+          fastPollUntil = 0;
           acknowledgeReply(result.request);
           if (mode != Mode::Recording && mode != Mode::Sending) {
             enter(Mode::Conversation, result.status == 415 ? "Local speech failed" : "Sumi reply failed");
@@ -293,7 +327,8 @@ void updateNetwork(uint32_t now) {
   }
   const VoiceLink::Request poll{VoiceLink::Job::Poll, 0, ""};
   networkBusy = VoiceLink::send(uploadPending ? upload : ackPending ? ack : poll);
-  nextNetworkMs = now + (uploadPending ? 0 : kPollMs);
+  const bool fastPoll = fastPollUntil && int32_t(fastPollUntil - now) > 0;
+  nextNetworkMs = now + (uploadPending ? 0 : fastPoll ? kActivePollMs : kPollMs);
 }
 
 }  // namespace
@@ -307,6 +342,8 @@ void setup() {
 
   M5.Mic.end();
   M5.Speaker.end();
+  audioRailOn = true;
+  audioStopped();
   frame.setColorDepth(16);
   frame.setPsram(true);
   portrait.setColorDepth(16);
@@ -340,7 +377,9 @@ void loop() {
   const bool right = M5.BtnB.wasPressed();
   switch (mode) {
     case Mode::Badge:
-      if (left || right) {
+      if (left) {
+        startRecording();
+      } else if (right) {
         enter(Mode::Conversation, kRecordPrompt);
       }
       break;
@@ -352,7 +391,7 @@ void loop() {
       }
       break;
     case Mode::Recording:
-      if (left) {
+      if (!M5.BtnA.isPressed()) {
         finishRecording();
       } else {
         pumpRecording();
@@ -366,6 +405,7 @@ void loop() {
     case Mode::Speaking:
       if (!M5.Speaker.isPlaying()) {
         M5.Speaker.end();
+        audioStopped();
         if (!kAudioBench) {
           acknowledgeReply(reply.request);
         }
@@ -381,5 +421,6 @@ void loop() {
   } else {
     updateNetwork(now);
   }
+  muteIdleAudio(millis());
   renderAvatar(millis());
 }
