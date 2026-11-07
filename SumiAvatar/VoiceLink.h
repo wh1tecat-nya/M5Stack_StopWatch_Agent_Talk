@@ -21,6 +21,8 @@ struct Result {
   int status;
   size_t samples;
   uint32_t sampleRate;
+  uint32_t receivedMs;
+  uint32_t synthesisMs;
 };
 
 bool begin(int16_t* recording, int16_t* playback);

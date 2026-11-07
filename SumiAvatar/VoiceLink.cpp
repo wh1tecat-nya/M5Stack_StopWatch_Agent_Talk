@@ -1,5 +1,6 @@
 #include "VoiceLink.h"
 #include "LocalSpeech.h"
+#include "WifiSetup.h"
 
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -57,12 +58,14 @@ void exchange(Result& result) {
     http.addHeader("Content-Type", "application/octet-stream");
     result.status = http.PUT(reinterpret_cast<uint8_t*>(recording),
                              result.request.samples * sizeof(int16_t));
+    result.receivedMs = millis();
   } else if (result.request.job == Job::Acknowledge) {
     result.status = http.sendRequest("DELETE");
   } else {
     const char* keys[] = {"X-Reply-Id", "Content-Type"};
     http.collectHeaders(keys, 2);
     result.status = http.GET();
+    result.receivedMs = millis();
     if (result.status == 422) {
       const String id = http.header("X-Reply-Id");
       if (!validId(id)) {
@@ -120,7 +123,9 @@ void exchange(Result& result) {
       if (textReply) {
         text[received] = '\0';
         http.end();
+        const uint32_t synthesisStarted = millis();
         result.samples = LocalSpeech::synthesize(text, playback, kPlaybackSamples);
+        result.synthesisMs = millis() - synthesisStarted;
         result.sampleRate = LocalSpeech::kSampleRate;
         if (!result.samples) result.status = 415;
       } else {
@@ -142,7 +147,8 @@ void worker(void*) {
 }
 
 bool begin(int16_t* input, int16_t* output) {
-  if (!*kWifiSsid || strncmp(kRelayUrl, "https://", 8) || !*kRelayToken || !*kRelayRootCa) {
+  WifiSetup::connect(kWifiSsid, kWifiPassword);
+  if (strncmp(kRelayUrl, "https://", 8) || !*kRelayToken || !*kRelayRootCa) {
     return false;
   }
   recording = input;
@@ -155,17 +161,12 @@ bool begin(int16_t* input, int16_t* output) {
     requests = results = nullptr;
     return false;
   }
-  WiFi.persistent(false);
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.setSleep(true);
-  WiFi.begin(kWifiSsid, kWifiPassword);
   configTime(0, 0, "time.cloudflare.com", "pool.ntp.org");
   return true;
 }
 
 bool connected() {
-  return requests && WiFi.status() == WL_CONNECTED && time(nullptr) >= 1700000000;
+  return requests && WifiSetup::connected() && time(nullptr) >= 1700000000;
 }
 
 bool send(const Request& request) {

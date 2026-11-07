@@ -1,40 +1,45 @@
 #include <M5Unified.h>
+#include <Preferences.h>
 #include <atomic>
 #include <cmath>
 #include <utility/M5IOE1_Class.hpp>
 
 #include "VoiceLink.h"
+#include "StopwatchSettings.h"
+#include "WifiSetup.h"
 #include "sumi_frames.h"
 
 namespace {
 
-enum class Mode { Badge, Conversation, Recording, Sending, Waiting, Speaking };
+enum class Mode { Conversation, Recording, Sending, Waiting, Speaking };
+enum class Screen { Badge, Avatar, Settings, Off };
 
 constexpr int kFrameSize = 400;
 constexpr int kPortraitSize = 360;
 constexpr int kPortraitInset = (kFrameSize - kPortraitSize) / 2;
 constexpr size_t kCaptureChunk = VoiceLink::kRecordRate / 50;
-constexpr uint32_t kIdleMs = 15000;
-constexpr uint32_t kBadgeDimMs = 30000;
-constexpr uint8_t kBright = 64;
 constexpr uint8_t kDim = 20;
+constexpr uint32_t kBadgeInfoMs = 6000;
 constexpr uint32_t kPollMs = 3000;
 constexpr uint32_t kActivePollMs = 750;
 constexpr uint32_t kFastWaitMs = 120000;
 constexpr uint32_t kReplyTimeoutMs = 600000;  // Worker turn lifetime.
 constexpr uint32_t kAudioIdleMs = 750;
-constexpr uint8_t kVolume = 190;
 #ifdef SUMI_AUDIO_BENCH
 constexpr bool kAudioBench = true;
 #else
 constexpr bool kAudioBench = false;
 #endif
 constexpr const char* kRecordPrompt = "Hold A to talk";
-constexpr uint32_t kBenchReplyDelayMs = kIdleMs + 1000;
+constexpr uint32_t kBenchReplyDelayMs = 16000;
 
 M5Canvas frame(&M5.Display);
 M5Canvas portrait(&M5.Display);
-Mode mode = Mode::Badge;
+Mode mode = Mode::Conversation;
+Screen screen = Screen::Badge;
+Screen beforeSettings = Screen::Badge;
+const auto& settings = StopwatchSettings::values;
+bool screenDirty = true;
 bool ready = false;
 bool wifiConfigured = false;
 bool networkBusy = false;
@@ -44,6 +49,12 @@ bool ackPending = false;
 uint8_t uploadAttempts = 0;
 uint32_t nextNetworkMs = 0;
 uint32_t modeStarted = 0;
+uint32_t screenStarted = 0;
+uint32_t badgeInfoStarted = 0;
+uint32_t lastBatteryCheck = 0;
+int batteryLevel = -1;
+bool wifiOnline = false;
+bool badgeInfo = false;
 uint32_t lastFrame = 0;
 uint32_t benchQueuedAt = 0;
 bool benchReplyPending = false;
@@ -61,37 +72,98 @@ std::atomic<size_t> captured{0};
 VoiceLink::Request upload{};
 VoiceLink::Result reply{};
 VoiceLink::Request ack{};
+bool waitingForTurn = false;
+uint32_t waitingSince = 0;
+uint32_t sentAt = 0;
+uint32_t lastEmptyPoll = 0;
+uint16_t pollErrors = 0;
 
-void drawPose(bool eyesClosed, int mouth, int offsetX) {
+struct TurnTiming {
+  char id[33];
+  uint32_t uploadMs, lastEmptyMs, replyMs, synthMs, playbackMs;
+  uint16_t pollErrors;
+  int16_t status;
+};
+
+TurnTiming lastTiming{};
+
+void printTiming() {
+  if (!lastTiming.id[0]) return;
+  Serial.printf("Sumi turn %s upload_ack=%lu last_empty=%lu reply_headers=%lu synth=%lu "
+                "playback_queued=%lu poll_errors=%u status=%d (ms since release, synth is duration)\n",
+                lastTiming.id, (unsigned long)lastTiming.uploadMs, (unsigned long)lastTiming.lastEmptyMs,
+                (unsigned long)lastTiming.replyMs, (unsigned long)lastTiming.synthMs,
+                (unsigned long)lastTiming.playbackMs, unsigned(lastTiming.pollErrors), lastTiming.status);
+}
+
+void saveTiming(int status, uint32_t playbackAt = 0) {
+  if (kAudioBench || strcmp(upload.id, reply.request.id) || !waitingForTurn) return;
+  lastTiming = {};
+  strlcpy(lastTiming.id, reply.request.id, sizeof(lastTiming.id));
+  lastTiming.uploadMs = waitingSince - sentAt;
+  lastTiming.lastEmptyMs = lastEmptyPoll;
+  lastTiming.replyMs = reply.receivedMs - sentAt;
+  lastTiming.synthMs = reply.synthesisMs;
+  lastTiming.playbackMs = playbackAt ? playbackAt - sentAt : 0;
+  lastTiming.pollErrors = pollErrors;
+  lastTiming.status = status;
+  Preferences preferences;
+  if (preferences.begin("sumi-display", false)) {
+    preferences.putBytes("last-turn", &lastTiming, sizeof(lastTiming));
+  }
+  printTiming();
+  waitingForTurn = false;
+}
+
+void drawPose(bool eyesClosed, int mouth, float lean) {
   frame.fillScreen(TFT_WHITE);
-  portrait.pushSprite(&frame, kPortraitInset + offsetX, kPortraitInset);
+  if (lean != 0) {
+    portrait.pushRotateZoom(&frame, 200, 350, lean, 1.0f, 1.0f);
+  } else {
+    portrait.pushSprite(&frame, kPortraitInset, kPortraitInset);
+  }
   if (eyesClosed) {
     const auto skin = frame.color565(250, 224, 216);
     const auto lashes = frame.color565(94, 63, 64);
-    frame.fillEllipse(183 + offsetX, 169, 16, 12, skin);
-    frame.fillEllipse(235 + offsetX, 171, 16, 12, skin);
-    frame.fillEllipse(183 + offsetX, 169, 12, 1, lashes);
-    frame.fillEllipse(235 + offsetX, 171, 12, 1, lashes);
+    frame.fillEllipse(183, 169, 16, 12, skin);
+    frame.fillEllipse(235, 171, 16, 12, skin);
+    frame.fillEllipse(183, 169, 12, 1, lashes);
+    frame.fillEllipse(235, 171, 12, 1, lashes);
   }
   if (mouth > 0) {
-    frame.fillEllipse(207 + offsetX, 200, 10, 7, frame.color565(253, 237, 230));
-    frame.fillEllipse(207 + offsetX, 200, 7, mouth, frame.color565(138, 76, 79));
+    frame.fillEllipse(207, 200, 10, 7, frame.color565(253, 237, 230));
+    frame.fillEllipse(207, 200, 7, mouth, frame.color565(138, 76, 79));
   }
+}
+
+void setScreen(Screen next) {
+  if (screen == Screen::Settings && next != Screen::Settings) StopwatchSettings::close();
+  const bool wasOff = screen == Screen::Off;
+  screen = next;
+  screenStarted = millis();
+  if (screen == Screen::Off) {
+    M5.Display.sleep();
+    return;
+  }
+  if (wasOff) M5.Display.wakeup();
+  if (screen == Screen::Badge) {
+    badgeDimmed = false;
+    badgeInfo = false;
+  }
+  M5.Display.setBrightness(screen == Screen::Badge ? settings.badgeLight : settings.avatarLight);
+  M5.Display.fillScreen(TFT_WHITE);
+  screenDirty = true;
 }
 
 void enter(Mode next, const char* status = "") {
   mode = next;
   modeStatus = status;
   modeStarted = millis();
-  M5.Display.setBrightness(kBright);
-  M5.Display.fillScreen(TFT_WHITE);
-  if (mode == Mode::Badge) {
-    badgeDimmed = false;
-    frame.fillScreen(TFT_WHITE);
-    frame.drawPng(kSumiBadge, sizeof(kSumiBadge));
-    frame.pushSprite((M5.Display.width() - kFrameSize) / 2,
-                     (M5.Display.height() - kFrameSize) / 2);
+  if ((screen == Screen::Badge && (next == Mode::Recording || next == Mode::Sending)) ||
+      (next == Mode::Speaking && (screen == Screen::Off || screen == Screen::Badge))) {
+    setScreen(Screen::Avatar);
   }
+  screenDirty = true;
 }
 
 int signalLevel(const int16_t* samples, size_t count) {
@@ -126,8 +198,9 @@ void muteIdleAudio(uint32_t now) {
 void playSpeech(const int16_t* audio, size_t samples, const char* status) {
   enter(Mode::Speaking, status);
   audioRailOn = true;
-  M5.Speaker.setVolume(kVolume);
+  M5.Speaker.setVolume(settings.volume);
   if (!M5.Speaker.playRaw(audio, samples, reply.sampleRate)) {
+    saveTiming(500);
     M5.Speaker.end();
     audioStopped();
     enter(Mode::Conversation, "Speaker error");
@@ -136,10 +209,12 @@ void playSpeech(const int16_t* audio, size_t samples, const char* status) {
     // The software queue can empty while I2S still has samples to play.
     speakerDrainMs = 1 + 1000 * config.dma_buf_len * config.dma_buf_count / config.sample_rate;
     lastSpeakerActiveMs = millis();
+    saveTiming(200, lastSpeakerActiveMs);
   }
 }
 
 void finishRecording(bool failed = false) {
+  const uint32_t releasedAt = millis();
   if (!captureStopped) {
     M5.Mic.end();
     audioStopped();
@@ -159,6 +234,9 @@ void finishRecording(bool failed = false) {
   }
   upload = {VoiceLink::Job::Upload, samples, ""};
   VoiceLink::newId(upload.id);
+  sentAt = releasedAt;
+  lastEmptyPoll = 0;
+  pollErrors = 0;
   uploadPending = true;
   uploadAttempts = 0;
   nextNetworkMs = millis();
@@ -223,24 +301,67 @@ void acknowledgeReply(const VoiceLink::Request& request) {
   nextNetworkMs = millis();
 }
 
+void drawIndicators() {
+  constexpr int x = 146;
+  constexpr int y = 20;
+  frame.fillRoundRect(135, 13, 130, 31, 10, TFT_WHITE);
+  frame.drawRoundRect(x, y, 23, 14, 3, TFT_DARKGREY);
+  frame.fillRect(x + 23, y + 4, 3, 6, TFT_DARKGREY);
+  if (batteryLevel > 0) frame.fillRect(x + 3, y + 3, (17 * batteryLevel + 99) / 100, 8, TFT_DARKGREEN);
+  char text[6];
+  if (batteryLevel < 0) {
+    strlcpy(text, "--", sizeof(text));
+  } else {
+    snprintf(text, sizeof(text), "%d%%", batteryLevel);
+  }
+  frame.setTextSize(2);
+  frame.setTextDatum(middle_left);
+  frame.setTextColor(TFT_DARKGREY);
+  frame.drawString(text, x + 33, y + 8);
+  constexpr int wifiX = 231;
+  const auto color = wifiOnline ? TFT_DARKGREEN : TFT_LIGHTGREY;
+  frame.drawArc(wifiX, y + 15, 14, 12, 215, 325, color);
+  frame.drawArc(wifiX, y + 15, 9, 7, 215, 325, color);
+  frame.fillCircle(wifiX, y + 13, 2, color);
+  if (!wifiOnline) frame.drawLine(wifiX - 10, y + 2, wifiX + 8, y + 15, TFT_DARKGREY);
+}
+
+void updateIndicators(uint32_t now) {
+  if (now - lastBatteryCheck >= 5000) {
+    lastBatteryCheck = now;
+    const int nextLevel = std::clamp(int(M5.Power.getBatteryLevel()), -1, 100);
+    if (nextLevel != batteryLevel) {
+      batteryLevel = nextLevel;
+      screenDirty = true;
+    }
+  }
+  const bool connected = WifiSetup::connected();
+  if (connected != wifiOnline) {
+    wifiOnline = connected;
+    screenDirty = true;
+  }
+}
+
+void pushFrame(int y) {
+  frame.pushSprite((M5.Display.width() - kFrameSize) / 2, y);
+}
+
 void renderAvatar(uint32_t now) {
-  if (mode == Mode::Badge || now - lastFrame < 80) {
+  if (!screenDirty && now - lastFrame < 80) {
     return;
   }
   const uint32_t elapsed = now - modeStarted;
-  const bool eyesClosed = elapsed % 4000 >= 3850;
   const double sway = std::sin(6.2831853 * (elapsed % 2800) / 2800.0);
   const bool thinking = mode == Mode::Waiting;
-  const int offsetX = thinking ? std::lround(14 * sway) : 0;
+  const bool eyesClosed = !thinking && elapsed % 4000 >= 3850;
+  const int lean = thinking ? std::lround(20 * sway) : 0;
   const int y = (M5.Display.height() - kFrameSize) / 2 + (thinking ? 0 : std::lround(4 * sway));
   const int x = (M5.Display.width() - kFrameSize) / 2;
   static bool previousEyes = false;
-  static Mode previousMode = Mode::Badge;
-  static uint32_t previousStart = 0;
   static int previousMouth = 0;
   static int previousLevel = 0;
   static int previousY = 0;
-  static int previousOffsetX = 0;
+  static int previousLean = 0;
   int mouth = 0;
   int level = 0;
   if (mode == Mode::Recording && !captureStopped) {
@@ -257,14 +378,13 @@ void renderAvatar(uint32_t now) {
       mouth = std::min(6, signalLevel(audio + index, count) / 350);
     }
   }
-  const bool newMode = mode != previousMode || modeStarted != previousStart;
-  const bool redraw = newMode || offsetX != previousOffsetX || eyesClosed != previousEyes ||
+  const bool redraw = screenDirty || lean != previousLean || eyesClosed != previousEyes ||
       mouth != previousMouth || level != previousLevel;
   if (!redraw && y == previousY) {
     return;
   }
   if (redraw) {
-    drawPose(eyesClosed, mouth, offsetX);
+    drawPose(eyesClosed, mouth, lean / 4.0f);
     frame.fillRoundRect(72, 347, 256, 40, 12, mode == Mode::Recording ? TFT_MAROON : TFT_WHITE);
     frame.setTextDatum(middle_center);
     frame.setTextSize(2);
@@ -275,23 +395,42 @@ void renderAvatar(uint32_t now) {
         frame.fillRect(151 + index * 20, 372, 17, 5, index < level ? TFT_GREEN : TFT_LIGHTGREY);
       }
     }
+    drawIndicators();
   }
   M5.Display.startWrite();
-  if (!newMode && y > previousY) {
+  if (y > previousY) {
     M5.Display.fillRect(x, previousY, kFrameSize, y - previousY, TFT_WHITE);
-  } else if (!newMode && y < previousY) {
+  } else if (y < previousY) {
     M5.Display.fillRect(x, y + kFrameSize, kFrameSize, previousY - y, TFT_WHITE);
   }
   frame.pushSprite(x, y);
   M5.Display.endWrite();
   previousY = y;
-  previousOffsetX = offsetX;
+  previousLean = lean;
   previousEyes = eyesClosed;
-  previousMode = mode;
   previousMouth = mouth;
   previousLevel = level;
-  previousStart = modeStarted;
   lastFrame = now;
+  screenDirty = false;
+}
+
+void renderScreen(uint32_t now) {
+  if (screen == Screen::Off) return;
+  if (screen == Screen::Avatar || (screen == Screen::Badge && badgeInfo)) updateIndicators(now);
+  if (screen == Screen::Avatar) {
+    renderAvatar(now);
+    return;
+  }
+  if (!screenDirty) return;
+  if (screen == Screen::Settings) {
+    StopwatchSettings::draw(frame, !kAudioBench);
+  } else {
+    frame.fillScreen(TFT_WHITE);
+    frame.drawPng(kSumiBadge, sizeof(kSumiBadge));
+    if (badgeInfo) drawIndicators();
+  }
+  pushFrame((M5.Display.height() - kFrameSize) / 2);
+  screenDirty = false;
 }
 
 void updateNetwork(uint32_t now) {
@@ -302,6 +441,8 @@ void updateNetwork(uint32_t now) {
       case VoiceLink::Job::Upload:
         if (result.status == 202) {
           uploadPending = false;
+          waitingForTurn = true;
+          waitingSince = result.receivedMs;
           nextNetworkMs = now;
           enter(Mode::Waiting, "Waiting for Sumi...");
         } else if ((result.status < 0 || result.status >= 500) && ++uploadAttempts < 3) {
@@ -318,9 +459,17 @@ void updateNetwork(uint32_t now) {
           reply = result;
           replyPending = true;
         } else if (result.status == 422 || result.status == 415) {
+          reply = result;
+          saveTiming(result.status);
           acknowledgeReply(result.request);
-          if (mode != Mode::Recording && mode != Mode::Sending) {
+          if (!waitingForTurn && mode != Mode::Recording && mode != Mode::Sending) {
             enter(Mode::Conversation, result.status == 415 ? "Local speech failed" : "Sumi reply failed");
+          }
+        } else if (waitingForTurn) {
+          if (result.status == 204) {
+            lastEmptyPoll = result.receivedMs - sentAt;
+          } else {
+            ++pollErrors;
           }
         }
         break;
@@ -336,19 +485,131 @@ void updateNetwork(uint32_t now) {
     playReply();
     return;
   }
-  if (!VoiceLink::connected() || networkBusy || int32_t(now - nextNetworkMs) < 0) {
+  if (WifiSetup::active() || !VoiceLink::connected() || networkBusy || int32_t(now - nextNetworkMs) < 0) {
     return;
   }
   const VoiceLink::Request poll{VoiceLink::Job::Poll, 0, ""};
   networkBusy = VoiceLink::send(uploadPending ? upload : ackPending ? ack : poll);
-  const bool fastPoll = mode == Mode::Waiting && millis() - modeStarted < kFastWaitMs;
+  const bool fastPoll = waitingForTurn && millis() - waitingSince < kFastWaitMs;
   nextNetworkMs = now + (uploadPending ? 0 : fastPoll ? kActivePollMs : kPollMs);
+}
+
+void updateScreen(uint32_t now) {
+  const bool left = M5.BtnA.wasPressed();
+  const bool right = M5.BtnB.wasPressed();
+  const bool power = M5.BtnPWR.wasClicked();
+  if (screen == Screen::Off) {
+    if (left || right || power) setScreen(Screen::Badge);
+    return;
+  }
+  if (power) {
+    setScreen(Screen::Off);
+    return;
+  }
+  if (right) {
+    if (screen == Screen::Settings) {
+      setScreen(mode == Mode::Conversation ? beforeSettings : Screen::Avatar);
+    } else {
+      beforeSettings = screen;
+      StopwatchSettings::open();
+      setScreen(Screen::Settings);
+    }
+    return;
+  }
+
+  const auto& touch = M5.Touch.getDetail();
+  const bool touched = M5.Touch.getCount() && touch.isPressed();
+  if (screen == Screen::Settings) {
+    const int x = touch.x - (M5.Display.width() - kFrameSize) / 2;
+    const int y = touch.y - (M5.Display.height() - kFrameSize) / 2;
+    if (StopwatchSettings::update(x, y, touched, touched && touch.wasPressed(),
+                                  !kAudioBench && !networkBusy && mode == Mode::Conversation)) {
+      M5.Speaker.setVolume(settings.volume);
+      M5.Display.setBrightness(settings.avatarLight);
+      screenDirty = true;
+    }
+    return;
+  }
+  if (left && mode == Mode::Conversation) {
+    setScreen(Screen::Avatar);
+    startRecording();
+    return;
+  }
+  const uint32_t screenElapsed = now - screenStarted;
+  if (screen == Screen::Avatar) {
+    const uint32_t timeout = uint32_t(settings.avatarSeconds) * 1000;
+    if (mode == Mode::Conversation && screenElapsed >= timeout && now - modeStarted >= timeout) {
+      setScreen(Screen::Badge);
+    }
+    return;
+  }
+
+  if (touched) {
+    screenStarted = now;
+    if (badgeDimmed) {
+      M5.Display.setBrightness(settings.badgeLight);
+      badgeDimmed = false;
+    }
+    if (touch.wasPressed() && touch.y <= M5.Display.height() / 4) {
+      badgeInfo = true;
+      badgeInfoStarted = now;
+      screenDirty = true;
+    }
+  } else if (!badgeDimmed && screenElapsed >= uint32_t(settings.badgeSeconds) * 1000) {
+    M5.Display.setBrightness(std::min(kDim, uint8_t(settings.badgeLight / 2)));
+    badgeDimmed = true;
+    screenStarted = now;
+    badgeInfo = false;
+    screenDirty = true;
+  } else if (badgeDimmed && screenElapsed >= uint32_t(settings.dimSeconds) * 1000) {
+    setScreen(Screen::Off);
+  }
+  if (badgeInfo && now - badgeInfoStarted >= kBadgeInfoMs) {
+    badgeInfo = false;
+    screenDirty = true;
+  }
+}
+
+void updateActivity(uint32_t now) {
+  switch (mode) {
+    case Mode::Conversation:
+    case Mode::Sending:
+      break;
+    case Mode::Recording:
+      if (!M5.BtnA.isPressed()) {
+        finishRecording();
+      } else {
+        pumpRecording();
+      }
+      break;
+    case Mode::Waiting:
+      if (waitingForTurn && !networkBusy && now - waitingSince >= kReplyTimeoutMs) {
+        waitingForTurn = false;
+        enter(Mode::Conversation, "Sumi reply timed out");
+      }
+      break;
+    case Mode::Speaking:
+      if (M5.Speaker.isPlaying()) {
+        lastSpeakerActiveMs = now;
+      } else if (now - lastSpeakerActiveMs >= speakerDrainMs) {
+        M5.Speaker.end();
+        audioStopped();
+        if (!kAudioBench) acknowledgeReply(reply.request);
+        if (waitingForTurn) {
+          enter(Mode::Waiting, "Waiting for Sumi...");
+        } else {
+          enter(Mode::Conversation, kRecordPrompt);
+        }
+      }
+      break;
+  }
 }
 
 }  // namespace
 
 void setup() {
   auto config = M5.config();
+  config.serial_baudrate = 115200;
   M5.begin(config);
   if (M5.getBoard() != m5::board_t::board_M5StopWatch) {
     return;
@@ -367,6 +628,16 @@ void setup() {
       !portrait.drawPng(kSumiAvatar, sizeof(kSumiAvatar))) {
     return;
   }
+  portrait.setPivot(180, 330);
+  StopwatchSettings::load();
+  {
+    Preferences preferences;
+    if (preferences.begin("sumi-display", true) &&
+        preferences.getBytesLength("last-turn") == sizeof(lastTiming)) {
+      preferences.getBytes("last-turn", &lastTiming, sizeof(lastTiming));
+      lastTiming.id[32] = '\0';
+    }
+  }
 
   recording = static_cast<int16_t*>(ps_malloc(VoiceLink::kRecordSamples * sizeof(int16_t)));
   if (!kAudioBench) {
@@ -375,71 +646,22 @@ void setup() {
       wifiConfigured = VoiceLink::begin(recording, playback);
     }
   }
-  enter(Mode::Badge);
+  lastBatteryCheck = millis() - 5000;
+  setScreen(Screen::Badge);
   ready = true;
 }
 
 void loop() {
-  delay(mode == Mode::Badge ? 20 : 5);
+  delay(screen == Screen::Avatar || mode == Mode::Recording ? 5 : 20);
   if (!ready) {
     return;
   }
 
   M5.update();
+  updateScreen(millis());
   const uint32_t now = millis();
-  const bool left = M5.BtnA.wasPressed();
-  const bool right = M5.BtnB.wasPressed();
-  switch (mode) {
-    case Mode::Badge:
-      if (left) {
-        startRecording();
-      } else if (right) {
-        enter(Mode::Conversation, kRecordPrompt);
-      } else if (M5.Touch.getCount() && M5.Touch.getDetail().isPressed()) {
-        modeStarted = now;
-        if (badgeDimmed) {
-          M5.Display.setBrightness(kBright);
-          badgeDimmed = false;
-        }
-      } else if (!badgeDimmed && now - modeStarted >= kBadgeDimMs) {
-        M5.Display.setBrightness(kDim);
-        badgeDimmed = true;
-      }
-      break;
-    case Mode::Conversation:
-      if (left) {
-        startRecording();
-      } else if (now - modeStarted >= kIdleMs) {
-        enter(Mode::Badge);
-      }
-      break;
-    case Mode::Recording:
-      if (!M5.BtnA.isPressed()) {
-        finishRecording();
-      } else {
-        pumpRecording();
-      }
-      break;
-    case Mode::Sending:
-      break;
-    case Mode::Waiting:
-      if (!networkBusy && now - modeStarted >= kReplyTimeoutMs) {
-        enter(Mode::Conversation, "Sumi reply timed out");
-      }
-      break;
-    case Mode::Speaking:
-      if (M5.Speaker.isPlaying()) {
-        lastSpeakerActiveMs = now;
-      } else if (now - lastSpeakerActiveMs >= speakerDrainMs) {
-        M5.Speaker.end();
-        audioStopped();
-        if (!kAudioBench) {
-          acknowledgeReply(reply.request);
-        }
-        enter(Mode::Conversation, kRecordPrompt);
-      }
-      break;
-  }
+  updateActivity(now);
+  if (Serial.available() && Serial.read() == '?') printTiming();
   if (kAudioBench) {
     if (benchReplyPending && now - benchQueuedAt >= kBenchReplyDelayMs) {
       benchReplyPending = false;
@@ -449,5 +671,5 @@ void loop() {
     updateNetwork(now);
   }
   muteIdleAudio(millis());
-  renderAvatar(millis());
+  renderScreen(millis());
 }
