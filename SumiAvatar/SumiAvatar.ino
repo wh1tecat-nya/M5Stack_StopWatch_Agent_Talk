@@ -18,7 +18,7 @@ constexpr uint32_t kIdleMs = 15000;
 constexpr uint32_t kPollMs = 3000;
 constexpr uint32_t kActivePollMs = 750;
 constexpr uint32_t kAudioIdleMs = 750;
-constexpr uint8_t kVolume = 104;
+constexpr uint8_t kVolume = 144;
 #ifdef SUMI_AUDIO_BENCH
 constexpr bool kAudioBench = true;
 #else
@@ -45,6 +45,8 @@ bool benchReplyPending = false;
 bool captureStopped = false;
 bool audioRailOn = false;
 uint32_t audioIdleSince = 0;
+uint32_t lastSpeakerActiveMs = 0;
+uint32_t speakerDrainMs = 0;
 uint32_t fastPollUntil = 0;
 const char* modeStatus = "";
 int16_t* recording = nullptr;
@@ -123,6 +125,11 @@ void playSpeech(const int16_t* audio, size_t samples, const char* status) {
     M5.Speaker.end();
     audioStopped();
     enter(Mode::Conversation, "Speaker error");
+  } else {
+    const auto config = M5.Speaker.config();
+    // The software queue can empty while I2S still has samples to play.
+    speakerDrainMs = 1 + 1000 * config.dma_buf_len * config.dma_buf_count / config.sample_rate;
+    lastSpeakerActiveMs = millis();
   }
 }
 
@@ -403,7 +410,9 @@ void loop() {
       }
       break;
     case Mode::Speaking:
-      if (!M5.Speaker.isPlaying()) {
+      if (M5.Speaker.isPlaying()) {
+        lastSpeakerActiveMs = now;
+      } else if (now - lastSpeakerActiveMs >= speakerDrainMs) {
         M5.Speaker.end();
         audioStopped();
         if (!kAudioBench) {
