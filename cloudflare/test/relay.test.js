@@ -70,6 +70,11 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
     await db.batch(sql.split(";").map((statement) => statement.trim()).filter(Boolean)
       .map((statement) => db.prepare(statement)));
   }
+  const historyMigration = await readFile(new URL("../migrations/0003_conversation_history.sql", import.meta.url), "utf8");
+  const [historySchema, historyTrigger] = historyMigration.split("CREATE TRIGGER");
+  await db.batch(historySchema.split(";").map((statement) => statement.trim()).filter(Boolean)
+    .map((statement) => db.prepare(statement)));
+  await db.prepare("CREATE TRIGGER" + historyTrigger).run();
   const fetch = (path, init) => worker.dispatchFetch(ORIGIN + path, init);
   const jsonPost = (path, body, headers = {}) => fetch(path, {
     method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json", ...headers },
@@ -214,4 +219,50 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
     method: "PUT", headers: { Authorization: "Bearer " + DEVICE_TOKEN },
   });
   assert.equal(next.status, 409);
+
+  assert.deepEqual(await db.prepare("SELECT transcript, answer FROM turns WHERE id = ?").bind(audioId).first(),
+    { transcript: null, answer: null });
+  assert.deepEqual(await db.prepare("SELECT transcript, answer FROM conversation_history WHERE id = ?").bind(audioId).first(),
+    { transcript: "こんにちは、すみ。", answer: "聞こえたよ。" });
+  await db.prepare("DELETE FROM turns WHERE id = ?").bind(audioId).run();
+  assert.equal(await db.prepare("SELECT count(*) AS n FROM conversation_history WHERE id = ?").bind(audioId).first("n"), 1);
+
+  const lockedHistory = await (await fetch("/history")).text();
+  assert.ok(lockedHistory.includes("オーナーキー"));
+  assert.ok(!lockedHistory.includes("こんにちは、すみ。"));
+  const loginHistory = (key, origin = ORIGIN) => fetch("/history/login", {
+    method: "POST", redirect: "manual", headers: { Origin: origin, "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ key }),
+  });
+  assert.equal((await loginHistory(OWNER_KEY, "https://evil.example")).status, 403);
+  assert.equal((await loginHistory("incorrect")).status, 403);
+  const historyLogin = await loginHistory(OWNER_KEY);
+  assert.equal(historyLogin.status, 303);
+  const historyCookie = historyLogin.headers.get("set-cookie").split(";")[0];
+  assert.match(historyLogin.headers.get("set-cookie"), /Secure; HttpOnly; SameSite=Lax/);
+  const historyHeaders = { Cookie: historyCookie };
+  const historyPage = await fetch("/history", { headers: historyHeaders });
+  assert.equal(historyPage.headers.get("cache-control"), "no-store");
+  assert.equal(historyPage.headers.get("referrer-policy"), "strict-origin");
+  assert.ok(historyPage.headers.get("content-security-policy").includes("frame-ancestors 'none'"));
+  const historyText = await historyPage.text();
+  assert.ok(historyText.includes("こんにちは、すみ。"));
+  assert.ok(historyText.includes("聞こえたよ。"));
+  assert.equal((await fetch("/history?before=invalid", { headers: historyHeaders })).status, 400);
+  for (let index = 0; index < 32; index++) {
+    await db.prepare("INSERT INTO conversation_history (id, created, transcript, answer, status) VALUES (?, ?, ?, ?, 'ready')")
+      .bind("e" + index.toString(16).padStart(31, "0"),
+        Date.now() + index, "<script>alert(1)</script>", "<img src=x>").run();
+  }
+  const firstPage = await (await fetch("/history", { headers: historyHeaders })).text();
+  assert.ok(firstPage.includes("&lt;script&gt;"));
+  assert.ok(!firstPage.includes("<script>"));
+  assert.ok(!firstPage.includes("<img src=x>"));
+  const olderUrl = firstPage.match(/href="(\/history\?before=[^"]+)"/)[1];
+  const older = await (await fetch(olderUrl, { headers: historyHeaders })).text();
+  assert.ok(older.includes("こんにちは、すみ。"));
+  assert.equal((await fetch("/history/logout", { method: "POST", headers: historyHeaders })).status, 403);
+  const logout = await fetch("/history/logout", { method: "POST", redirect: "manual", headers: { ...historyHeaders, Origin: ORIGIN } });
+  assert.equal(logout.status, 303);
+  assert.ok((await (await fetch("/history", { headers: historyHeaders })).text()).includes("オーナーキー"));
 });

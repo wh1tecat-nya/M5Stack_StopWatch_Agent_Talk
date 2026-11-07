@@ -79,13 +79,12 @@ void exchange(Result& result) {
       const String id = http.header("X-Reply-Id");
       const String type = http.header("Content-Type");
       const bool textReply = type == "text/plain; charset=utf-8";
-      char text[513];
       if (!validId(id) || length <= 0) {
         result.status = -2;
         return;
       }
       id.toCharArray(result.request.id, sizeof(result.request.id));
-      if (textReply && size_t(length) >= sizeof(text)) {
+      if (textReply && size_t(length) >= sizeof(result.text)) {
         result.status = 415;
         return;
       }
@@ -102,7 +101,7 @@ void exchange(Result& result) {
       }
       size_t received = 0;
       const uint32_t start = millis();
-      auto* bytes = reinterpret_cast<uint8_t*>(textReply ? static_cast<void*>(text) : playback);
+      auto* bytes = reinterpret_cast<uint8_t*>(textReply ? static_cast<void*>(result.text) : playback);
       while (received < size_t(length) && millis() - start < 12000) {
         const int available = stream->available();
         if (available > 0) {
@@ -121,10 +120,10 @@ void exchange(Result& result) {
         return;
       }
       if (textReply) {
-        text[received] = '\0';
+        result.text[received] = '\0';
         http.end();
         const uint32_t synthesisStarted = millis();
-        result.samples = LocalSpeech::synthesize(text, playback, kPlaybackSamples);
+        result.samples = LocalSpeech::synthesize(result.text, playback, kPlaybackSamples);
         result.synthesisMs = millis() - synthesisStarted;
         result.sampleRate = LocalSpeech::kSampleRate;
         if (!result.samples) result.status = 415;

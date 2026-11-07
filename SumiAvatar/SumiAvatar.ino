@@ -80,6 +80,8 @@ uint32_t waitingSince = 0;
 uint32_t sentAt = 0;
 uint32_t lastEmptyPoll = 0;
 uint16_t pollErrors = 0;
+uint16_t speechLineStarts[513]{};
+uint16_t speechLineCount = 0;
 
 struct TurnTiming {
   char id[33];
@@ -346,8 +348,35 @@ void startRecording() {
   pumpRecording();
 }
 
+void prepareSpeechLines() {
+  speechLineCount = 1;
+  speechLineStarts[0] = 0;
+  scene.setFont(&fonts::lgfxJapanGothic_20);
+  scene.setTextSize(1);
+  String line;
+  const size_t length = strlen(reply.text);
+  for (size_t offset = 0; offset < length;) {
+    if (reply.text[offset] == '\n') {
+      speechLineStarts[speechLineCount++] = ++offset;
+      line = "";
+      continue;
+    }
+    const uint8_t first = reply.text[offset];
+    const size_t bytes = first < 0x80 ? 1 : first < 0xe0 ? 2 : first < 0xf0 ? 3 : 4;
+    char character[5]{};
+    memcpy(character, reply.text + offset, std::min(bytes, length - offset));
+    if (line.length() && scene.textWidth(line + character) > 296) {
+      speechLineStarts[speechLineCount++] = offset;
+      line = "";
+    }
+    line += character;
+    offset += bytes;
+  }
+}
+
 void playReply() {
   replyPending = false;
+  prepareSpeechLines();
   playSpeech(playback, reply.samples, "すみからのお返事だよ");
 }
 
@@ -404,7 +433,16 @@ void pushFrame(int y) {
   frame.pushSprite((M5.Display.width() - kFrameSize) / 2, y);
 }
 
-void drawSpeechBubble(int level) {
+int speechScroll(uint32_t elapsed) {
+  if (mode != Mode::Speaking || speechLineCount <= 2 || !reply.samples || !reply.sampleRate) return 0;
+  const uint32_t duration = (uint64_t(reply.samples) * 1000 + reply.sampleRate - 1) / reply.sampleRate;
+  const int target = std::min(uint64_t(elapsed) * speechLineCount / duration, uint64_t(speechLineCount - 2));
+  if (target == 0) return 0;
+  const uint32_t transition = uint64_t(target) * duration / speechLineCount;
+  return (target - 1) * 25 + std::min(uint32_t(180), elapsed - transition) * 25 / 180;
+}
+
+void drawSpeechBubble(int level, int scroll) {
   constexpr int width = 324;
   constexpr int top = 60;
   constexpr int height = 66;
@@ -421,7 +459,24 @@ void drawSpeechBubble(int level) {
   scene.setTextSize(1);
   scene.setTextColor(TFT_DARKGREY);
   scene.setTextDatum(middle_center);
-  scene.drawString(modeStatus, centerX, top + (mode == Mode::Recording ? 24 : height / 2));
+  if (mode == Mode::Speaking && reply.text[0] && speechLineCount) {
+    scene.setClipRect(left + 10, top + 8, width - 20, height - 16);
+    const size_t length = strlen(reply.text);
+    const int firstLine = scroll / 25;
+    for (int row = 0; row < 3 && firstLine + row < speechLineCount; ++row) {
+      const int index = firstLine + row;
+      const size_t begin = speechLineStarts[index];
+      size_t end = index + 1 < speechLineCount ? speechLineStarts[index + 1] : length;
+      while (end > begin && (reply.text[end - 1] == '\n' || reply.text[end - 1] == '\r')) --end;
+      char line[513]{};
+      memcpy(line, reply.text + begin, end - begin);
+      const int y = speechLineCount == 1 ? top + height / 2 : top + 21 + row * 25 - scroll % 25;
+      scene.drawString(line, centerX, y);
+    }
+    scene.clearClipRect();
+  } else {
+    scene.drawString(modeStatus, centerX, top + (mode == Mode::Recording ? 24 : height / 2));
+  }
   if (mode == Mode::Recording) {
     scene.fillCircle(centerX - 64, top + 50, 4, TFT_RED);
     scene.setFont(&fonts::Font0);
@@ -450,6 +505,8 @@ void renderAvatar(uint32_t now) {
   static int previousMouth = 0;
   static int previousLevel = 0;
   static int previousLean = 0;
+  static int previousScroll = 0;
+  const int scroll = speechScroll(elapsed);
   int mouth = 0;
   int level = 0;
   if (mode == Mode::Recording && !captureStopped) {
@@ -466,14 +523,15 @@ void renderAvatar(uint32_t now) {
       mouth = std::min(6, signalLevel(audio + index, count) / 350);
     }
   }
-  const bool redraw = screenDirty || lean != previousLean || eyesClosed != previousEyes ||
+  const bool redraw = screenDirty || scroll != previousScroll || lean != previousLean || eyesClosed != previousEyes ||
       mouth != previousMouth || level != previousLevel;
   if (!redraw) return;
   drawPose(eyesClosed, mouth, lean / 4.0f);
-  drawSpeechBubble(level);
+  drawSpeechBubble(level, scroll);
   drawIndicators(scene, (scene.width() - kFrameSize) / 2);
   scene.pushSprite(0, 0);
   previousLean = lean;
+  previousScroll = scroll;
   previousEyes = eyesClosed;
   previousMouth = mouth;
   previousLevel = level;

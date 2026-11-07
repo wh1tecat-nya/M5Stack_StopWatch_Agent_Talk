@@ -4,6 +4,7 @@ import { TURN_ID } from "./events.js";
 import { equalSecret, InputError, json, readText } from "./http.js";
 import { mcp, SCOPE } from "./mcp.js";
 import { handleTurn } from "./turns.js";
+import { history } from "./history.js";
 
 const DEFAULT_REDIRECT = "https://chatgpt.com/connector_platform_oauth_redirect";
 
@@ -95,6 +96,7 @@ export default {
         defaultHandler: {
           async fetch(request, providerEnv, execution) {
             const path = new URL(request.url).pathname;
+            if (path === "/history" || path.startsWith("/history/")) return history(request, providerEnv);
             if (path === "/authorize") return authorize(request, providerEnv, origin, redirectUri);
             if (path === "/device/replies/next") return handleAudio(request, providerEnv, execution, "next");
             for (const [prefix, operation] of [["/device/turns/", "upload"], ["/device/replies/", "ack"]]) {

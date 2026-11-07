@@ -51,4 +51,8 @@ npx wrangler secret put DEVICE_TOKEN --config wrangler.deploy.jsonc
 npx wrangler secret put OPENAI_API_KEY --config wrangler.deploy.jsonc
 ```
 
-既存のすみが開始したクラウド作業で `stopwatch.message` を購読する。イベントの `text` に対して日本語で短く返答し、同じ `request_id` と返答文を `submit_stopwatch_reply` に渡すよう設定する。返答は1〜2文、80文字程度を目安にする。録音は認証済みの `PUT /device/turns/{id}` で受け付け、16 kHz・モノラル・符号付き16ビットリトルエンディアンPCMに対応する。StopWatchは `GET /device/replies/next` で返答テキストを受け取り、本体で音声化する。再生後の受領通知で中継の録音とテキストを消去する。
+既存のすみが開始したクラウド作業で `stopwatch.message` を購読する。イベントの `text` に対して日本語で短く返答し、同じ `request_id` と返答文を `submit_stopwatch_reply` に渡すよう設定する。返答は1〜2文、80文字程度を目安にする。録音は認証済みの `PUT /device/turns/{id}` で受け付け、16 kHz・モノラル・符号付き16ビットリトルエンディアンPCMに対応する。StopWatchは `GET /device/replies/next` で返答テキストを受け取り、本体で音声化する。再生後の受領通知で処理用の録音とテキストを消去する。
+
+## 会話履歴
+
+`/history` を開き、既存の `OWNER_KEY` でログインする。ログインは7日間有効で、ページからログアウトできる。文字起こしと返答は、`0003_conversation_history.sql` で追加する履歴テーブルに期限なしで保存する。保存は会話の更新と同じトランザクションで行い、再送による重複を防ぐ。処理用データの受領通知・期限切れ削除後も履歴を保持する。保存開始前に消去済みの本文は復元できない。

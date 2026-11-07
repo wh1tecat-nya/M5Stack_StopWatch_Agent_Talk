@@ -23,6 +23,7 @@ struct Result {
   uint32_t sampleRate;
   uint32_t receivedMs;
   uint32_t synthesisMs;
+  char text[513];
 };
 
 bool begin(int16_t* recording, int16_t* playback);

@@ -8,6 +8,8 @@
 namespace LocalSpeech {
 #ifdef SUMI_SANOTTS
 namespace {
+constexpr float kSpeechLengthScale = 1.2187f * 1.15f;
+
 struct Output {
   int16_t* pcm;
   size_t capacity;
@@ -30,6 +32,7 @@ size_t synthesize(const char* text, int16_t* pcm, size_t capacity) {
   static SanoTTS voice;
   static_assert(SanoTTS::kSampleRate == kSampleRate);
   if ((!voice.ready() && !voice.begin()) || !voice.kanjiReady()) return 0;
+  voice.setLengthScale(kSpeechLengthScale);
   Output output{pcm, capacity, 0, false};
   if (!voice.synthesize(text, append, &output) || output.overflow) return 0;
   return output.samples;

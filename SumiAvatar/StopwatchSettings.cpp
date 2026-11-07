@@ -13,8 +13,10 @@ constexpr const char* kTitles[] = {"Volume", "Avatar brightness", "Badge brightn
                                  "Avatar timeout", "Badge lit timeout", "Badge dim timeout", "Change Wi-Fi"};
 constexpr int kItemCount = 7;
 constexpr int kListTop = 88;
-constexpr int kListBottom = 300;
-constexpr int kBackTop = 310;
+constexpr int kListBottom = 320;
+constexpr int kBackTop = 330;
+constexpr int kBackRadiusX = 233;
+constexpr int kBackRadiusY = 145;
 constexpr int kRowHeight = 76;
 constexpr int kMaxScroll = kItemCount * kRowHeight - (kListBottom - kListTop);
 constexpr int kSliderStart = 68;
@@ -64,7 +66,10 @@ void button(M5Canvas& frame, const char* text, int x, int y, int width, bool sel
 bool onBack(int x, int y) {
   const int dx = x - 200;
   const int dy = y - 200;
-  return y >= kBackTop && dx * dx + dy * dy <= 233 * 233;
+  const float ellipseX = float(dx) / kBackRadiusX;
+  const float ellipseY = float(y - kBackTop - kBackRadiusY) / kBackRadiusY;
+  return y >= kBackTop && ellipseX * ellipseX + ellipseY * ellipseY <= 1.0f &&
+         dx * dx + dy * dy <= 233 * 233;
 }
 
 Update tap(int x, int y, bool canChangeWifi) {
@@ -262,13 +267,12 @@ void draw(M5Canvas& frame, bool canChangeWifi) {
 
 void drawBack(M5Canvas& screen) {
   const int centerX = screen.width() / 2;
-  const int centerY = screen.height() / 2;
   const int top = (screen.height() - 400) / 2 + kBackTop;
   screen.setClipRect(0, top, screen.width(), screen.height() - top);
-  screen.fillCircle(centerX, centerY, screen.height() / 2 - 1, TFT_LIGHTGREY);
-  screen.drawCircle(centerX, centerY, 174, TFT_WHITE);
+  screen.fillEllipse(centerX, top + kBackRadiusY, kBackRadiusX, kBackRadiusY, TFT_LIGHTGREY);
+  screen.drawEllipse(centerX, top + kBackRadiusY, kBackRadiusX, kBackRadiusY, TFT_DARKGREY);
   screen.clearClipRect();
-  const int arrowY = top + 33;
+  const int arrowY = top + 40;
   screen.drawLine(centerX - 17, arrowY, centerX + 15, arrowY, TFT_DARKGREY);
   screen.drawLine(centerX - 17, arrowY, centerX - 7, arrowY - 10, TFT_DARKGREY);
   screen.drawLine(centerX - 17, arrowY, centerX - 7, arrowY + 10, TFT_DARKGREY);
