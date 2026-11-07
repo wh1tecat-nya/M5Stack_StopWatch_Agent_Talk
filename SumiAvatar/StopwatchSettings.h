@@ -13,9 +13,10 @@ struct Values {
 };
 
 extern Values values;
+enum class Update { None, Changed, Close };
 void load();
 void open();
 void close();
-bool update(int x, int y, bool pressed, bool firstPress, bool canChangeWifi);
+Update update(int x, int y, bool pressed, bool firstPress, bool canChangeWifi);
 void draw(M5Canvas& frame, bool canChangeWifi);
 }

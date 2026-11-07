@@ -7,26 +7,32 @@ namespace StopwatchSettings {
 Values values;
 
 namespace {
+enum class Page { List, Slider, Duration, WifiConfirm };
 constexpr uint8_t kDurations[] = {15, 30, 45, 60};
-constexpr int kSliderStart = 164;
-constexpr int kSliderEnd = 304;
-constexpr int kSliderTop = 90;
-constexpr int kSliderSpacing = 37;
-constexpr int kDurationTop = 213;
-constexpr int kDurationSpacing = 37;
-constexpr int kChoiceStart = 153;
-constexpr int kChoiceSpacing = 47;
-constexpr int kWifiTop = 326;
+constexpr const char* kTitles[] = {"Volume", "Avatar brightness", "Badge brightness",
+                                 "Avatar timeout", "Badge lit timeout", "Badge dim timeout", "Change Wi-Fi"};
+constexpr int kItemCount = 7;
+constexpr int kListTop = 88;
+constexpr int kListBottom = 316;
+constexpr int kRowHeight = 76;
+constexpr int kMaxScroll = kItemCount * kRowHeight - (kListBottom - kListTop);
+constexpr int kSliderStart = 68;
+constexpr int kSliderEnd = 332;
+constexpr int kSliderY = 226;
 constexpr int kMinLight = 24;
-constexpr const char* kSliderLabels[] = {"Volume", "Avatar LCD", "Badge LCD"};
-constexpr const char* kDurationLabels[] = {"Avatar", "Badge lit", "Badge dim"};
 uint8_t* const sliders[] = {&values.volume, &values.avatarLight, &values.badgeLight};
 uint8_t* const durations[] = {&values.avatarSeconds, &values.badgeSeconds, &values.dimSeconds};
-int dragging = -1;
+Page page = Page::List;
+int selected = 0;
+int scroll = 0;
+int touchStartX = 0, touchStartY = 0, scrollStart = 0;
+int lastX = 0, lastY = 0;
+bool tracking = false;
+bool moved = false;
+bool dragging = false;
 bool dirty = false;
-bool confirming = false;
 bool wifiWasActive = false;
-const char* wifiNotice = "";
+const char* notice = "";
 const char* previousWifiStatus = nullptr;
 
 bool validTime(uint8_t value) {
@@ -48,10 +54,62 @@ void label(M5Canvas& frame, const char* text, int x, int y, bool centered = fals
 }
 
 void button(M5Canvas& frame, const char* text, int x, int y, int width, bool selected = false) {
-  frame.fillRoundRect(x, y, width, 28, 7, selected ? TFT_NAVY : TFT_LIGHTGREY);
+  frame.fillRoundRect(x, y, width, 48, 12, selected ? TFT_NAVY : TFT_LIGHTGREY);
   frame.setTextColor(selected ? TFT_WHITE : TFT_BLACK);
-  label(frame, text, x + width / 2, y + 14, true);
+  label(frame, text, x + width / 2, y + 24, true);
   frame.setTextColor(TFT_BLACK);
+}
+
+bool onBack(int x, int y) {
+  return x >= 125 && x < 275 && y >= 332 && y < 380;
+}
+
+Update tap(int x, int y, bool canChangeWifi) {
+  if (onBack(x, y)) {
+    save();
+    if (page == Page::List && !WifiSetup::active()) return Update::Close;
+    WifiSetup::stop();
+    wifiWasActive = false;
+    page = Page::List;
+    notice = "";
+    return Update::Changed;
+  }
+  if (WifiSetup::active()) return Update::None;
+  if (page == Page::List) {
+    if (x < 48 || x >= 352 || y < kListTop || y >= kListBottom) return Update::None;
+    selected = (y - kListTop + scroll) / kRowHeight;
+    if (selected >= kItemCount) return Update::None;
+    notice = "";
+    page = selected < 3 ? Page::Slider : selected < 6 ? Page::Duration : Page::WifiConfirm;
+    return Update::Changed;
+  }
+  if (page == Page::Duration) {
+    for (int index = 0; index < 4; ++index) {
+      const int left = index % 2 == 0 ? 74 : 210;
+      const int top = index < 2 ? 144 : 216;
+      if (x >= left && x < left + 116 && y >= top && y < top + 48) {
+        *durations[selected - 3] = kDurations[index];
+        dirty = true;
+        save();
+        return Update::Changed;
+      }
+    }
+  }
+  if (page == Page::WifiConfirm && y >= 218 && y < 266) {
+    if (x >= 74 && x < 190) {
+      page = Page::List;
+    } else if (x >= 210 && x < 326) {
+      if (!canChangeWifi) {
+        notice = "Wi-Fi busy. Try again.";
+      } else if (!WifiSetup::start()) {
+        notice = "Could not start Wi-Fi setup";
+      }
+    } else {
+      return Update::None;
+    }
+    return Update::Changed;
+  }
+  return Update::None;
 }
 }
 
@@ -68,9 +126,9 @@ void load() {
 }
 
 void open() {
-  dragging = -1;
-  confirming = false;
-  wifiNotice = "";
+  page = Page::List;
+  tracking = moved = dragging = false;
+  notice = "";
   previousWifiStatus = nullptr;
 }
 
@@ -78,121 +136,124 @@ void close() {
   save();
   WifiSetup::stop();
   wifiWasActive = false;
+  tracking = dragging = false;
 }
 
-bool update(int x, int y, bool pressed, bool firstPress, bool canChangeWifi) {
+Update update(int x, int y, bool pressed, bool firstPress, bool canChangeWifi) {
   WifiSetup::update();
   const bool wifiActive = WifiSetup::active();
-  const bool wifiChanged = wifiActive != wifiWasActive;
+  bool redraw = wifiActive != wifiWasActive;
+  if (wifiWasActive && !wifiActive) page = Page::List;
   wifiWasActive = wifiActive;
   if (wifiActive) {
-    if (firstPress && y >= kWifiTop && y < kWifiTop + 28 && x >= 144 && x < 256) {
-      WifiSetup::stop();
-      wifiWasActive = false;
-      return true;
-    }
     const char* status = WifiSetup::status();
-    const bool statusChanged = status != previousWifiStatus;
+    redraw = redraw || status != previousWifiStatus;
     previousWifiStatus = status;
-    return wifiChanged || statusChanged;
-  }
-  if (!pressed && dragging >= 0) {
-    dragging = -1;
-    save();
-  }
-  if (confirming) {
-    if (!firstPress || y < 225 || y >= 253 || x < 95 || x >= 305) return false;
-    confirming = false;
-    if (x >= 207) {
-      if (!canChangeWifi) {
-        wifiNotice = "Wi-Fi busy. Try again.";
-      } else if (!WifiSetup::start()) {
-        wifiNotice = "Could not start Wi-Fi setup";
-      }
-    }
-    return true;
-  }
-  if (firstPress && x >= kSliderStart - 12 && x <= kSliderEnd + 12) {
-    for (int index = 0; index < 3; ++index) {
-      if (abs(y - (kSliderTop + index * kSliderSpacing)) <= 13) dragging = index;
-    }
-  }
-  if (pressed && dragging >= 0) {
-    const int minimum = dragging == 0 ? 0 : kMinLight;
-    const uint8_t value = map(constrain(x, kSliderStart, kSliderEnd), kSliderStart, kSliderEnd, minimum, 255);
-    if (*sliders[dragging] == value) return false;
-    *sliders[dragging] = value;
-    dirty = true;
-    return true;
   }
   if (firstPress) {
-    for (int row = 0; row < 3; ++row) {
-      const int top = kDurationTop + row * kDurationSpacing;
-      if (y < top || y >= top + 28) continue;
-      for (int column = 0; column < 4; ++column) {
-        const int left = kChoiceStart + column * kChoiceSpacing;
-        if (x >= left && x < left + 40) {
-          *durations[row] = kDurations[column];
-          dirty = true;
-          save();
-          return true;
-        }
-      }
-    }
-    if (y >= kWifiTop && y < kWifiTop + 28 && x >= 115 && x < 285) {
-      if (!canChangeWifi) {
-        wifiNotice = "Wi-Fi busy. Try again.";
-        return true;
-      }
-      confirming = true;
-      return true;
-    }
+    tracking = true;
+    moved = false;
+    touchStartX = x;
+    touchStartY = y;
+    scrollStart = scroll;
+    dragging = !wifiActive && page == Page::Slider &&
+               x >= kSliderStart - 18 && x <= kSliderEnd + 18 && abs(y - kSliderY) <= 36;
   }
-  return wifiChanged;
+  if (pressed && tracking) {
+    lastX = x;
+    lastY = y;
+    moved = moved || abs(y - touchStartY) > 10 || abs(x - touchStartX) > 10;
+    if (!wifiActive && page == Page::List && moved &&
+        touchStartY >= kListTop && touchStartY < kListBottom) {
+      const int nextScroll = constrain(scrollStart + touchStartY - y, 0, kMaxScroll);
+      redraw = redraw || nextScroll != scroll;
+      scroll = nextScroll;
+    }
+    if (dragging) {
+      const int minimum = selected == 0 ? 0 : kMinLight;
+      const uint8_t value = map(constrain(x, kSliderStart, kSliderEnd), kSliderStart, kSliderEnd, minimum, 255);
+      if (*sliders[selected] != value) {
+        *sliders[selected] = value;
+        dirty = true;
+        redraw = true;
+      }
+    }
+  } else if (tracking) {
+    tracking = false;
+    save();
+    if (!moved && !dragging) {
+      const auto action = tap(lastX, lastY, canChangeWifi);
+      if (action != Update::None) return action;
+    }
+    dragging = false;
+  }
+  return redraw ? Update::Changed : Update::None;
 }
 
 void draw(M5Canvas& frame, bool canChangeWifi) {
   frame.fillScreen(TFT_WHITE);
   frame.setTextSize(2);
   frame.setTextColor(TFT_BLACK);
-  label(frame, "Settings", 200, 51, true);
+  label(frame, page == Page::List ? "Settings" : kTitles[selected], 200, 55, true);
   if (WifiSetup::active()) {
-    label(frame, "Connect your phone to:", 200, 127, true);
-    label(frame, WifiSetup::accessPoint(), 200, 163, true);
-    label(frame, "Password", 200, 195, true);
-    label(frame, WifiSetup::accessPassword(), 200, 224, true);
-    label(frame, WifiSetup::status(), 200, 270, true);
-    button(frame, "Close", 144, kWifiTop, 112);
-    return;
-  }
-  if (confirming) {
-    label(frame, "Start Wi-Fi setup?", 200, 163, true);
-    label(frame, "Use a phone to change Wi-Fi", 200, 193, true);
-    button(frame, "No", 95, 225, 98);
-    button(frame, "Yes", 207, 225, 98, true);
-    return;
-  }
-  for (int index = 0; index < 3; ++index) {
-    const int y = kSliderTop + index * kSliderSpacing;
-    const int minimum = index == 0 ? 0 : kMinLight;
-    const int knob = map(*sliders[index], minimum, 255, kSliderStart, kSliderEnd);
-    label(frame, kSliderLabels[index], 38, y);
-    frame.fillRoundRect(kSliderStart, y - 3, kSliderEnd - kSliderStart, 6, 3, TFT_LIGHTGREY);
-    frame.fillCircle(knob, y, 8, TFT_NAVY);
-    frame.setTextDatum(middle_right);
-    frame.drawNumber((*sliders[index] * 100 + 127) / 255, 350, y);
-  }
-  for (int row = 0; row < 3; ++row) {
-    const int y = kDurationTop + row * kDurationSpacing;
-    label(frame, kDurationLabels[row], 38, y + 14);
-    for (int column = 0; column < 4; ++column) {
-      char caption[4];
-      snprintf(caption, sizeof(caption), "%us", unsigned(kDurations[column]));
-      button(frame, caption, kChoiceStart + column * kChoiceSpacing, y, 40, *durations[row] == kDurations[column]);
+    label(frame, "Connect your phone to:", 200, 115, true);
+    label(frame, WifiSetup::accessPoint(), 200, 153, true);
+    label(frame, "Password", 200, 187, true);
+    label(frame, WifiSetup::accessPassword(), 200, 218, true);
+    label(frame, WifiSetup::status(), 200, 268, true);
+  } else if (page == Page::List) {
+    frame.setClipRect(45, kListTop, 310, kListBottom - kListTop);
+    for (int index = 0; index < kItemCount; ++index) {
+      const int y = kListTop + index * kRowHeight - scroll;
+      if (y + kRowHeight <= kListTop || y >= kListBottom) continue;
+      frame.fillRoundRect(48, y + 3, 292, kRowHeight - 6, 12, TFT_LIGHTGREY);
+      label(frame, kTitles[index], 62, y + 24);
+      char caption[40];
+      if (index < 3) {
+        snprintf(caption, sizeof(caption), "%u%%", unsigned((*sliders[index] * 100 + 127) / 255));
+      } else if (index < 6) {
+        snprintf(caption, sizeof(caption), "%u seconds", unsigned(*durations[index - 3]));
+      } else {
+        strlcpy(caption, canChangeWifi ? "Phone setup" : "Available when idle", sizeof(caption));
+      }
+      frame.setTextColor(TFT_DARKGREY);
+      label(frame, caption, 62, y + 52);
+      label(frame, ">", 318, y + 38, true);
+      frame.setTextColor(TFT_BLACK);
+    }
+    frame.clearClipRect();
+    const int thumbHeight = (kListBottom - kListTop) * (kListBottom - kListTop) / (kItemCount * kRowHeight);
+    const int thumbY = kListTop + scroll * (kListBottom - kListTop - thumbHeight) / kMaxScroll;
+    frame.fillRoundRect(348, thumbY, 5, thumbHeight, 2, TFT_DARKGREY);
+  } else if (page == Page::Slider) {
+    char caption[6];
+    snprintf(caption, sizeof(caption), "%u%%", unsigned((*sliders[selected] * 100 + 127) / 255));
+    frame.setTextSize(5);
+    label(frame, caption, 200, 150, true);
+    frame.setTextSize(2);
+    const int minimum = selected == 0 ? 0 : kMinLight;
+    const int knob = map(*sliders[selected], minimum, 255, kSliderStart, kSliderEnd);
+    frame.fillRoundRect(kSliderStart, kSliderY - 5, kSliderEnd - kSliderStart, 10, 5, TFT_LIGHTGREY);
+    frame.fillRoundRect(kSliderStart, kSliderY - 5, knob - kSliderStart, 10, 5, TFT_NAVY);
+    frame.fillCircle(knob, kSliderY, 17, TFT_NAVY);
+    label(frame, "Drag to adjust", 200, 279, true);
+  } else if (page == Page::Duration) {
+    for (int index = 0; index < 4; ++index) {
+      char caption[12];
+      snprintf(caption, sizeof(caption), "%u sec", unsigned(kDurations[index]));
+      button(frame, caption, index % 2 == 0 ? 74 : 210, index < 2 ? 144 : 216, 116,
+             *durations[selected - 3] == kDurations[index]);
+    }
+  } else {
+    label(frame, "Start phone Wi-Fi setup?", 200, 151, true);
+    button(frame, "No", 74, 218, 116);
+    button(frame, "Yes", 210, 218, 116, true);
+    if (*notice) {
+      frame.setTextSize(1);
+      label(frame, notice, 200, 293, true);
+      frame.setTextSize(2);
     }
   }
-  if (canChangeWifi) button(frame, "Change Wi-Fi", 115, kWifiTop, 170);
-  frame.setTextSize(1);
-  label(frame, *wifiNotice ? wifiNotice : "Right button: back", 200, 366, true);
+  button(frame, "Back", 125, 332, 150);
 }
 }

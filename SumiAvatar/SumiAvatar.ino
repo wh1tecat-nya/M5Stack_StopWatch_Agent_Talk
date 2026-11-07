@@ -86,14 +86,39 @@ struct TurnTiming {
 };
 
 TurnTiming lastTiming{};
+struct TimingHistory {
+  uint32_t count;
+  TurnTiming turns[4];
+};
+TimingHistory timingHistory{};
+bool powerKeyConfigured = false;
+uint32_t powerKeyClicks = 0;
 
-void printTiming() {
-  if (!lastTiming.id[0]) return;
+void printTiming(const TurnTiming& timing) {
+  if (!timing.id[0]) return;
   Serial.printf("Sumi turn %s upload_ack=%lu last_empty=%lu reply_headers=%lu synth=%lu "
                 "playback_queued=%lu poll_errors=%u status=%d (ms since release, synth is duration)\n",
-                lastTiming.id, (unsigned long)lastTiming.uploadMs, (unsigned long)lastTiming.lastEmptyMs,
-                (unsigned long)lastTiming.replyMs, (unsigned long)lastTiming.synthMs,
-                (unsigned long)lastTiming.playbackMs, unsigned(lastTiming.pollErrors), lastTiming.status);
+                timing.id, (unsigned long)timing.uploadMs, (unsigned long)timing.lastEmptyMs,
+                (unsigned long)timing.replyMs, (unsigned long)timing.synthMs,
+                (unsigned long)timing.playbackMs, unsigned(timing.pollErrors), timing.status);
+}
+
+void printTimings() {
+  for (uint32_t index = 0; index < timingHistory.count; ++index) printTiming(timingHistory.turns[index]);
+}
+
+void configurePowerKey() {
+  constexpr uint8_t kButtonConfig = 0x49;
+  constexpr uint8_t kSingleResetDisable = 0x01;
+  // Same SINGLE_RST_DIS setting as the official StopWatch factory firmware.
+  uint8_t previous = 0;
+  uint8_t current = 0;
+  if (M5.Power.M5pm1.readRegister(kButtonConfig, &previous, 1) &&
+      M5.Power.M5pm1.writeRegister8(kButtonConfig, previous | kSingleResetDisable) &&
+      M5.Power.M5pm1.readRegister(kButtonConfig, &current, 1)) {
+    powerKeyConfigured = current == (previous | kSingleResetDisable);
+  }
+  Serial.printf("Sumi power key configured=%u config=0x%02x\n", powerKeyConfigured, current);
 }
 
 void saveTiming(int status, uint32_t playbackAt = 0) {
@@ -107,11 +132,14 @@ void saveTiming(int status, uint32_t playbackAt = 0) {
   lastTiming.playbackMs = playbackAt ? playbackAt - sentAt : 0;
   lastTiming.pollErrors = pollErrors;
   lastTiming.status = status;
+  for (int index = 3; index > 0; --index) timingHistory.turns[index] = timingHistory.turns[index - 1];
+  timingHistory.turns[0] = lastTiming;
+  timingHistory.count = std::min(timingHistory.count + 1, uint32_t(4));
   Preferences preferences;
   if (preferences.begin("sumi-display", false)) {
-    preferences.putBytes("last-turn", &lastTiming, sizeof(lastTiming));
+    preferences.putBytes("turn-history", &timingHistory, sizeof(timingHistory));
   }
-  printTiming();
+  printTiming(lastTiming);
   waitingForTurn = false;
 }
 
@@ -304,7 +332,7 @@ void acknowledgeReply(const VoiceLink::Request& request) {
 void drawIndicators() {
   constexpr int x = 146;
   constexpr int y = 20;
-  frame.fillRoundRect(135, 13, 130, 31, 10, TFT_WHITE);
+  frame.fillRoundRect(135, 13, 148, 31, 10, TFT_WHITE);
   frame.drawRoundRect(x, y, 23, 14, 3, TFT_DARKGREY);
   frame.fillRect(x + 23, y + 4, 3, 6, TFT_DARKGREY);
   if (batteryLevel > 0) frame.fillRect(x + 3, y + 3, (17 * batteryLevel + 99) / 100, 8, TFT_DARKGREEN);
@@ -318,7 +346,7 @@ void drawIndicators() {
   frame.setTextDatum(middle_left);
   frame.setTextColor(TFT_DARKGREY);
   frame.drawString(text, x + 33, y + 8);
-  constexpr int wifiX = 231;
+  constexpr int wifiX = 263;
   const auto color = wifiOnline ? TFT_DARKGREEN : TFT_LIGHTGREY;
   frame.drawArc(wifiX, y + 15, 14, 12, 215, 325, color);
   frame.drawArc(wifiX, y + 15, 9, 7, 215, 325, color);
@@ -498,6 +526,10 @@ void updateScreen(uint32_t now) {
   const bool left = M5.BtnA.wasPressed();
   const bool right = M5.BtnB.wasPressed();
   const bool power = M5.BtnPWR.wasClicked();
+  if (power) {
+    ++powerKeyClicks;
+    Serial.printf("Sumi power click=%lu screen=%u\n", (unsigned long)powerKeyClicks, unsigned(screen));
+  }
   if (screen == Screen::Off) {
     if (left || right || power) setScreen(Screen::Badge);
     return;
@@ -522,8 +554,11 @@ void updateScreen(uint32_t now) {
   if (screen == Screen::Settings) {
     const int x = touch.x - (M5.Display.width() - kFrameSize) / 2;
     const int y = touch.y - (M5.Display.height() - kFrameSize) / 2;
-    if (StopwatchSettings::update(x, y, touched, touched && touch.wasPressed(),
-                                  !kAudioBench && !networkBusy && mode == Mode::Conversation)) {
+    const auto update = StopwatchSettings::update(x, y, touched, touched && touch.wasPressed(),
+                                                !kAudioBench && !networkBusy && mode == Mode::Conversation);
+    if (update == StopwatchSettings::Update::Close) {
+      setScreen(mode == Mode::Conversation ? beforeSettings : Screen::Avatar);
+    } else if (update == StopwatchSettings::Update::Changed) {
       M5.Speaker.setVolume(settings.volume);
       M5.Display.setBrightness(settings.avatarLight);
       screenDirty = true;
@@ -614,6 +649,7 @@ void setup() {
   if (M5.getBoard() != m5::board_t::board_M5StopWatch) {
     return;
   }
+  configurePowerKey();
 
   M5.Mic.end();
   M5.Speaker.end();
@@ -632,10 +668,20 @@ void setup() {
   StopwatchSettings::load();
   {
     Preferences preferences;
-    if (preferences.begin("sumi-display", true) &&
-        preferences.getBytesLength("last-turn") == sizeof(lastTiming)) {
-      preferences.getBytes("last-turn", &lastTiming, sizeof(lastTiming));
-      lastTiming.id[32] = '\0';
+    if (preferences.begin("sumi-display", true)) {
+      if (preferences.getBytesLength("turn-history") == sizeof(timingHistory) &&
+          preferences.getBytes("turn-history", &timingHistory, sizeof(timingHistory)) == sizeof(timingHistory) &&
+          timingHistory.count <= 4) {
+        for (auto& timing : timingHistory.turns) timing.id[32] = '\0';
+      } else {
+        timingHistory = {};
+        if (preferences.getBytesLength("last-turn") == sizeof(lastTiming) &&
+            preferences.getBytes("last-turn", &lastTiming, sizeof(lastTiming)) == sizeof(lastTiming)) {
+          lastTiming.id[32] = '\0';
+          timingHistory.turns[0] = lastTiming;
+          timingHistory.count = 1;
+        }
+      }
     }
   }
 
@@ -661,7 +707,16 @@ void loop() {
   updateScreen(millis());
   const uint32_t now = millis();
   updateActivity(now);
-  if (Serial.available() && Serial.read() == '?') printTiming();
+  if (Serial.available()) {
+    const char command = Serial.read();
+    if (command == '?') printTimings();
+    if (command == 'p') {
+      uint8_t config = 0;
+      const bool read = M5.Power.M5pm1.readRegister(0x49, &config, 1);
+      Serial.printf("Sumi power read=%u config=0x%02x clicks=%lu screen=%u uptime=%lu\n",
+                    read, config, (unsigned long)powerKeyClicks, unsigned(screen), (unsigned long)millis());
+    }
+  }
   if (kAudioBench) {
     if (benchReplyPending && now - benchQueuedAt >= kBenchReplyDelayMs) {
       benchReplyPending = false;
