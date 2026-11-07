@@ -1,5 +1,6 @@
 #include <M5Unified.h>
 #include <Preferences.h>
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <utility/M5IOE1_Class.hpp>
@@ -25,6 +26,9 @@ constexpr uint32_t kActivePollMs = 750;
 constexpr uint32_t kFastWaitMs = 120000;
 constexpr uint32_t kReplyTimeoutMs = 600000;  // Worker turn lifetime.
 constexpr uint32_t kAudioIdleMs = 750;
+constexpr uint32_t kAvatarFrameMs = 33;
+constexpr int kSwayPixels = 14;
+constexpr int kSwayMargin = kSwayPixels + 1;
 #ifdef SUMI_AUDIO_BENCH
 constexpr bool kAudioBench = true;
 #else
@@ -59,6 +63,16 @@ int batteryLevel = -1;
 bool wifiOnline = false;
 bool badgeInfo = false;
 uint32_t lastFrame = 0;
+uint16_t swayWeights[kPortraitSize]{};
+uint16_t swayInput[kPortraitSize]{};
+uint16_t swayOutput[kPortraitSize + 1]{};
+// One half-pixel phase costs 259,920 bytes in PSRAM and avoids per-frame blending.
+uint16_t* swayHalf = nullptr;
+uint32_t animationFrames = 0;
+uint32_t animationWindow = 0;
+uint32_t animationFps10 = 0;
+uint32_t composeUs = 0;
+uint32_t pushUs = 0;
 uint32_t benchQueuedAt = 0;
 bool benchReplyPending = false;
 bool badgeDimmed = false;
@@ -170,12 +184,66 @@ void saveTiming(int status, uint32_t playbackAt = 0) {
   waitingForTurn = false;
 }
 
-void drawPose(bool eyesClosed, int mouth, float lean) {
+uint16_t blendPixel(uint16_t current, uint16_t previous, uint32_t fraction) {
+  if (current == previous || fraction < 8) return current;
+  const uint32_t a = __builtin_bswap16(current);
+  const uint32_t b = __builtin_bswap16(previous);
+  // Five-bit weights keep the packed red and blue channels from overlapping.
+  const uint32_t weight = fraction >> 3;
+  const uint32_t rb = (((a & 0xf81f) * (32 - weight) + (b & 0xf81f) * weight) >> 5) & 0xf81f;
+  const uint32_t g = (((a & 0x07e0) * (32 - weight) + (b & 0x07e0) * weight) >> 5) & 0x07e0;
+  return __builtin_bswap16(rb | g);
+}
+
+void prepareSway() {
+  swayHalf = static_cast<uint16_t*>(ps_malloc(kPortraitSize * sizeof(swayOutput)));
+  if (!swayHalf) return;  // Integer-pixel movement remains available without the cache.
+  const auto* source = static_cast<const uint16_t*>(portrait.getBuffer());
+  for (int row = 0; row < kPortraitSize; ++row) {
+    memcpy(swayInput, source + row * portrait.width(), sizeof(swayInput));
+    uint16_t previous = 0xffff;
+    for (int column = 0; column <= kPortraitSize; ++column) {
+      const uint16_t current = column < kPortraitSize ? swayInput[column] : 0xffff;
+      swayOutput[column] = blendPixel(current, previous, 128);
+      previous = current;
+    }
+    memcpy(swayHalf + row * (kPortraitSize + 1), swayOutput, sizeof(swayOutput));
+  }
+}
+
+void drawSway(int portraitX, int portraitY, int swayQ8, bool eraseEdges = false) {
+  const auto* source = static_cast<const uint16_t*>(portrait.getBuffer());
+  auto* destination = static_cast<uint16_t*>(scene.getBuffer());
+  for (int row = 0; row < kPortraitSize; ++row) {
+    const int offsetQ8 = swayQ8 * swayWeights[row] / 65535;
+    int shift = offsetQ8 / 256;
+    int fraction = offsetQ8 - shift * 256;
+    if (fraction < 0) {
+      --shift;
+      fraction += 256;
+    }
+    const bool half = swayHalf && fraction >= 64 && fraction < 192;
+    if (fraction >= (swayHalf ? 192 : 128)) ++shift;
+    const auto* input = half ? swayHalf + row * (kPortraitSize + 1) : source + row * portrait.width();
+    auto* rowStart = destination + (portraitY + row) * scene.width() + portraitX - kSwayMargin;
+    auto* output = rowStart + kSwayMargin + shift;
+    const size_t pixels = kPortraitSize + (half ? 1 : 0);
+    if (eraseEdges) {
+      std::fill(rowStart, output, uint16_t(0xffff));
+      std::fill(output + pixels, rowStart + kPortraitSize + 2 * kSwayMargin, uint16_t(0xffff));
+    }
+    // Stage through internal RAM to avoid alternating PSRAM reads and writes.
+    memcpy(swayOutput, input, pixels * sizeof(uint16_t));
+    memcpy(output, swayOutput, pixels * sizeof(uint16_t));
+  }
+}
+
+void drawPose(bool eyesClosed, int mouth, int swayQ8) {
   scene.fillScreen(TFT_WHITE);
   const int portraitX = (scene.width() - kPortraitSize) / 2;
   const int portraitY = scene.height() - kPortraitSize;
-  if (lean != 0) {
-    portrait.pushRotateZoom(&scene, scene.width() / 2, scene.height(), lean, 1.0f, 1.0f);
+  if (swayQ8 != 0) {
+    drawSway(portraitX, portraitY, swayQ8);
   } else {
     portrait.pushSprite(&scene, portraitX, portraitY);
   }
@@ -442,7 +510,7 @@ int speechScroll(uint32_t elapsed) {
   return (target - 1) * 25 + std::min(uint32_t(180), elapsed - transition) * 25 / 180;
 }
 
-void drawSpeechBubble(int level, int scroll) {
+void drawSpeechBubble(int level, int scroll, bool frameOnly = false) {
   constexpr int width = 324;
   constexpr int top = 60;
   constexpr int height = 66;
@@ -455,6 +523,7 @@ void drawSpeechBubble(int level, int scroll) {
                      centerX, top + height + 12, TFT_WHITE);
   scene.drawLine(centerX - 12, top + height - 1, centerX, top + height + 12, outline);
   scene.drawLine(centerX + 12, top + height - 1, centerX, top + height + 12, outline);
+  if (frameOnly) return;
   scene.setFont(&fonts::lgfxJapanGothic_20);
   scene.setTextSize(1);
   scene.setTextColor(TFT_DARKGREY);
@@ -493,18 +562,18 @@ void drawSpeechBubble(int level, int scroll) {
 }
 
 void renderAvatar(uint32_t now) {
-  if (!screenDirty && now - lastFrame < 80) {
+  if (!screenDirty && now - lastFrame < kAvatarFrameMs) {
     return;
   }
   const uint32_t elapsed = now - modeStarted;
   const double sway = std::sin(6.2831853 * (elapsed % 2800) / 2800.0);
   const bool thinking = mode == Mode::Waiting;
   const bool eyesClosed = !thinking && elapsed % 4000 >= 3850;
-  const int lean = thinking ? std::lround(20 * sway) : 0;
+  const int swayQ8 = thinking ? std::lround(kSwayPixels * 256 * sway) : 0;
   static bool previousEyes = false;
   static int previousMouth = 0;
   static int previousLevel = 0;
-  static int previousLean = 0;
+  static int previousSway = 0;
   static int previousScroll = 0;
   const int scroll = speechScroll(elapsed);
   int mouth = 0;
@@ -523,14 +592,44 @@ void renderAvatar(uint32_t now) {
       mouth = std::min(6, signalLevel(audio + index, count) / 350);
     }
   }
-  const bool redraw = screenDirty || scroll != previousScroll || lean != previousLean || eyesClosed != previousEyes ||
+  const bool redraw = screenDirty || scroll != previousScroll || swayQ8 != previousSway || eyesClosed != previousEyes ||
       mouth != previousMouth || level != previousLevel;
   if (!redraw) return;
-  drawPose(eyesClosed, mouth, lean / 4.0f);
-  drawSpeechBubble(level, scroll);
-  drawIndicators(scene, (scene.width() - kFrameSize) / 2);
+  const bool partial = thinking && !screenDirty;
+  const uint32_t composeStarted = micros();
+  const int portraitX = (scene.width() - kPortraitSize) / 2;
+  const int portraitY = scene.height() - kPortraitSize;
+  if (partial) {
+    int32_t x = 0, y = 0, w = 0, h = 0;
+    scene.getClipRect(&x, &y, &w, &h);
+    scene.setClipRect(portraitX - kSwayMargin, portraitY, kPortraitSize + 2 * kSwayMargin, kPortraitSize);
+    drawSway(portraitX, portraitY, swayQ8, true);
+    // The portrait overlaps the bubble's lower border, but its text is unchanged.
+    drawSpeechBubble(level, scroll, true);
+    scene.setClipRect(x, y, w, h);
+  } else {
+    drawPose(eyesClosed, mouth, swayQ8);
+    drawSpeechBubble(level, scroll);
+    drawIndicators(scene, (scene.width() - kFrameSize) / 2);
+  }
+  composeUs = micros() - composeStarted;
+  const uint32_t pushStarted = micros();
+  int32_t clipX = 0, clipY = 0, clipW = 0, clipH = 0;
+  if (partial) {
+    M5.Display.getClipRect(&clipX, &clipY, &clipW, &clipH);
+    M5.Display.setClipRect(portraitX - kSwayMargin, portraitY, kPortraitSize + 2 * kSwayMargin, kPortraitSize);
+  }
   scene.pushSprite(0, 0);
-  previousLean = lean;
+  if (partial) M5.Display.setClipRect(clipX, clipY, clipW, clipH);
+  pushUs = micros() - pushStarted;
+  ++animationFrames;
+  const uint32_t measured = millis();
+  if (measured - animationWindow >= 1000) {
+    animationFps10 = animationFrames * 10000 / (measured - animationWindow);
+    animationFrames = 0;
+    animationWindow = measured;
+  }
+  previousSway = swayQ8;
   previousScroll = scroll;
   previousEyes = eyesClosed;
   previousMouth = mouth;
@@ -770,7 +869,11 @@ void setup() {
       !portrait.drawPng(kSumiAvatar, sizeof(kSumiAvatar))) {
     return;
   }
-  portrait.setPivot(kPortraitSize / 2, kPortraitSize);
+  for (int row = 0; row < kPortraitSize; ++row) {
+    const float position = 1.0f - float(row) / (kPortraitSize - 1);
+    swayWeights[row] = std::lround(65535 * position * position * (3 - 2 * position));
+  }
+  prepareSway();
   StopwatchSettings::load();
   {
     Preferences preferences;
@@ -821,6 +924,8 @@ void loop() {
       const bool read = M5.Power.M5pm1.readRegister(0x49, &config, 1);
       Serial.printf("Sumi power read=%u config=0x%02x raw=0x%02x clicks=%lu screen=%u uptime=%lu\n",
                     read, config, powerKeyState, (unsigned long)powerKeyClicks, unsigned(screen), (unsigned long)millis());
+      Serial.printf("Sumi animation fps10=%lu compose_us=%lu push_us=%lu\n",
+                    (unsigned long)animationFps10, (unsigned long)composeUs, (unsigned long)pushUs);
     }
   }
   if (kAudioBench) {
