@@ -30,11 +30,14 @@ constexpr bool kAudioBench = true;
 #else
 constexpr bool kAudioBench = false;
 #endif
-constexpr const char* kRecordPrompt = "Hold A to talk";
+constexpr const char* kRecordPrompt = "左ボタンを押して話しかけてね";
+constexpr const char* kSendingStatus = "お話を聞いてるよ";
+constexpr const char* kWaitingStatus = "お返事を考えてるよ";
 constexpr uint32_t kBenchReplyDelayMs = 16000;
 
 M5Canvas frame(&M5.Display);
 M5Canvas portrait(&M5.Display);
+M5Canvas scene(&M5.Display);
 Mode mode = Mode::Conversation;
 Screen screen = Screen::Badge;
 Screen beforeSettings = Screen::Badge;
@@ -93,6 +96,28 @@ struct TimingHistory {
 TimingHistory timingHistory{};
 bool powerKeyConfigured = false;
 uint32_t powerKeyClicks = 0;
+uint32_t lastPowerRead = 0;
+uint8_t powerKeyState = 0;
+
+bool updatePowerKey(uint32_t now) {
+  if (now - lastPowerRead < 20) return false;
+  lastPowerRead = now;
+  uint8_t state = 0;
+  if (M5.Power.M5pm1.readRegister(0x48, &state, 1)) {
+    if ((state & 1) != (powerKeyState & 1)) {
+      Serial.printf("Sumi power raw=%u uptime=%lu\n", unsigned(state & 1), (unsigned long)now);
+    }
+    powerKeyState = state;
+    // BTN_FLAG retains a tap that began and ended between two screen updates.
+    if ((state & 0x80) && !(state & 1) && !M5.BtnPWR.isPressed()) {
+      M5.BtnPWR.setState(now, m5::Button_Class::state_clicked);
+      return true;
+    }
+    M5.BtnPWR.setRawState(now, state & 1);
+    return M5.BtnPWR.wasClicked();
+  }
+  return false;
+}
 
 void printTiming(const TurnTiming& timing) {
   if (!timing.id[0]) return;
@@ -144,23 +169,27 @@ void saveTiming(int status, uint32_t playbackAt = 0) {
 }
 
 void drawPose(bool eyesClosed, int mouth, float lean) {
-  frame.fillScreen(TFT_WHITE);
+  scene.fillScreen(TFT_WHITE);
+  const int portraitX = (scene.width() - kPortraitSize) / 2;
+  const int portraitY = scene.height() - kPortraitSize;
   if (lean != 0) {
-    portrait.pushRotateZoom(&frame, 200, 350, lean, 1.0f, 1.0f);
+    portrait.pushRotateZoom(&scene, scene.width() / 2, scene.height(), lean, 1.0f, 1.0f);
   } else {
-    portrait.pushSprite(&frame, kPortraitInset, kPortraitInset);
+    portrait.pushSprite(&scene, portraitX, portraitY);
   }
+  const int dx = portraitX - kPortraitInset;
+  const int dy = portraitY - kPortraitInset;
   if (eyesClosed) {
-    const auto skin = frame.color565(250, 224, 216);
-    const auto lashes = frame.color565(94, 63, 64);
-    frame.fillEllipse(183, 169, 16, 12, skin);
-    frame.fillEllipse(235, 171, 16, 12, skin);
-    frame.fillEllipse(183, 169, 12, 1, lashes);
-    frame.fillEllipse(235, 171, 12, 1, lashes);
+    const auto skin = scene.color565(250, 224, 216);
+    const auto lashes = scene.color565(94, 63, 64);
+    scene.fillEllipse(183 + dx, 169 + dy, 16, 12, skin);
+    scene.fillEllipse(235 + dx, 171 + dy, 16, 12, skin);
+    scene.fillEllipse(183 + dx, 169 + dy, 12, 1, lashes);
+    scene.fillEllipse(235 + dx, 171 + dy, 12, 1, lashes);
   }
   if (mouth > 0) {
-    frame.fillEllipse(207, 200, 10, 7, frame.color565(253, 237, 230));
-    frame.fillEllipse(207, 200, 7, mouth, frame.color565(138, 76, 79));
+    scene.fillEllipse(207 + dx, 200 + dy, 10, 7, scene.color565(253, 237, 230));
+    scene.fillEllipse(207 + dx, 200 + dy, 7, mouth, scene.color565(138, 76, 79));
   }
 }
 
@@ -231,7 +260,7 @@ void playSpeech(const int16_t* audio, size_t samples, const char* status) {
     saveTiming(500);
     M5.Speaker.end();
     audioStopped();
-    enter(Mode::Conversation, "Speaker error");
+    enter(Mode::Conversation, "音が出せなかったよ");
   } else {
     const auto config = M5.Speaker.config();
     // The software queue can empty while I2S still has samples to play.
@@ -249,7 +278,7 @@ void finishRecording(bool failed = false) {
   }
   const size_t samples = captured.load(std::memory_order_acquire);
   if (failed || samples < VoiceLink::kRecordRate / 5) {
-    enter(Mode::Conversation, failed ? "Mic error" : kRecordPrompt);
+    enter(Mode::Conversation, failed ? "マイクを確認してね" : kRecordPrompt);
     return;
   }
   if (kAudioBench) {
@@ -257,7 +286,7 @@ void finishRecording(bool failed = false) {
     reply.sampleRate = VoiceLink::kRecordRate;
     benchQueuedAt = millis();
     benchReplyPending = true;
-    enter(Mode::Waiting, "Replay in 16s");
+    enter(Mode::Waiting, "少し待ってね");
     return;
   }
   upload = {VoiceLink::Job::Upload, samples, ""};
@@ -268,7 +297,7 @@ void finishRecording(bool failed = false) {
   uploadPending = true;
   uploadAttempts = 0;
   nextNetworkMs = millis();
-  enter(Mode::Sending, "Sending...");
+  enter(Mode::Sending, kSendingStatus);
 }
 
 void pumpRecording() {
@@ -278,7 +307,7 @@ void pumpRecording() {
     M5.Mic.end();
     audioStopped();
     captureStopped = true;
-    enter(Mode::Recording, "Limit - release to send");
+    enter(Mode::Recording, "いったん指を離してね");
     return;
   }
 
@@ -293,19 +322,19 @@ void pumpRecording() {
 
 void startRecording() {
   if (kAudioBench && benchReplyPending) {
-    enter(Mode::Conversation, "Replay pending");
+    enter(Mode::Conversation, "もう少し待ってね");
     return;
   }
   if (!recording) {
-    enter(Mode::Conversation, "Audio memory error");
+    enter(Mode::Conversation, "録音の準備ができなかったよ");
     return;
   }
   if (!kAudioBench && !VoiceLink::connected()) {
-    enter(Mode::Conversation, wifiConfigured ? "Wi-Fi connecting" : "Wi-Fi setup needed");
+    enter(Mode::Conversation, wifiConfigured ? "Wi-Fiにつないでるよ" : "Wi-Fiを設定してね");
     return;
   }
   if (uploadPending) {
-    enter(Mode::Conversation, "Upload pending");
+    enter(Mode::Conversation, kSendingStatus);
     return;
   }
   audioRailOn = true;
@@ -313,13 +342,13 @@ void startRecording() {
   captured = 0;
   queued = 0;
   M5.Mic.setBufferReleaseCallback(nullptr, captureReleased);
-  enter(Mode::Recording, "REC - release to send");
+  enter(Mode::Recording, "いま聞いてるよ");
   pumpRecording();
 }
 
 void playReply() {
   replyPending = false;
-  playSpeech(playback, reply.samples, "AI voice");
+  playSpeech(playback, reply.samples, "すみからのお返事だよ");
 }
 
 void acknowledgeReply(const VoiceLink::Request& request) {
@@ -329,29 +358,30 @@ void acknowledgeReply(const VoiceLink::Request& request) {
   nextNetworkMs = millis();
 }
 
-void drawIndicators() {
-  constexpr int x = 146;
+void drawIndicators(M5Canvas& canvas, int insetX = 0) {
+  const int x = 146 + insetX;
   constexpr int y = 20;
-  frame.fillRoundRect(135, 13, 148, 31, 10, TFT_WHITE);
-  frame.drawRoundRect(x, y, 23, 14, 3, TFT_DARKGREY);
-  frame.fillRect(x + 23, y + 4, 3, 6, TFT_DARKGREY);
-  if (batteryLevel > 0) frame.fillRect(x + 3, y + 3, (17 * batteryLevel + 99) / 100, 8, TFT_DARKGREEN);
+  canvas.fillRoundRect(x - 11, 13, 148, 31, 10, TFT_WHITE);
+  canvas.drawRoundRect(x, y, 23, 14, 3, TFT_DARKGREY);
+  canvas.fillRect(x + 23, y + 4, 3, 6, TFT_DARKGREY);
+  if (batteryLevel > 0) canvas.fillRect(x + 3, y + 3, (17 * batteryLevel + 99) / 100, 8, TFT_DARKGREEN);
   char text[6];
   if (batteryLevel < 0) {
     strlcpy(text, "--", sizeof(text));
   } else {
     snprintf(text, sizeof(text), "%d%%", batteryLevel);
   }
-  frame.setTextSize(2);
-  frame.setTextDatum(middle_left);
-  frame.setTextColor(TFT_DARKGREY);
-  frame.drawString(text, x + 33, y + 8);
-  constexpr int wifiX = 263;
+  canvas.setFont(&fonts::Font0);
+  canvas.setTextSize(2);
+  canvas.setTextDatum(middle_left);
+  canvas.setTextColor(TFT_DARKGREY);
+  canvas.drawString(text, x + 33, y + 8);
+  const int wifiX = 263 + insetX;
   const auto color = wifiOnline ? TFT_DARKGREEN : TFT_LIGHTGREY;
-  frame.drawArc(wifiX, y + 15, 14, 12, 215, 325, color);
-  frame.drawArc(wifiX, y + 15, 9, 7, 215, 325, color);
-  frame.fillCircle(wifiX, y + 13, 2, color);
-  if (!wifiOnline) frame.drawLine(wifiX - 10, y + 2, wifiX + 8, y + 15, TFT_DARKGREY);
+  canvas.drawArc(wifiX, y + 15, 14, 12, 215, 325, color);
+  canvas.drawArc(wifiX, y + 15, 9, 7, 215, 325, color);
+  canvas.fillCircle(wifiX, y + 13, 2, color);
+  if (!wifiOnline) canvas.drawLine(wifiX - 10, y + 2, wifiX + 8, y + 15, TFT_DARKGREY);
 }
 
 void updateIndicators(uint32_t now) {
@@ -374,6 +404,39 @@ void pushFrame(int y) {
   frame.pushSprite((M5.Display.width() - kFrameSize) / 2, y);
 }
 
+void drawSpeechBubble(int level) {
+  constexpr int width = 324;
+  constexpr int top = 60;
+  constexpr int height = 66;
+  const int centerX = scene.width() / 2;
+  const int left = centerX - width / 2;
+  const auto outline = mode == Mode::Recording ? TFT_MAROON : scene.color565(144, 136, 156);
+  scene.fillRoundRect(left, top, width, height, 18, TFT_WHITE);
+  scene.drawRoundRect(left, top, width, height, 18, outline);
+  scene.fillTriangle(centerX - 12, top + height - 2, centerX + 12, top + height - 2,
+                     centerX, top + height + 12, TFT_WHITE);
+  scene.drawLine(centerX - 12, top + height - 1, centerX, top + height + 12, outline);
+  scene.drawLine(centerX + 12, top + height - 1, centerX, top + height + 12, outline);
+  scene.setFont(&fonts::lgfxJapanGothic_20);
+  scene.setTextSize(1);
+  scene.setTextColor(TFT_DARKGREY);
+  scene.setTextDatum(middle_center);
+  scene.drawString(modeStatus, centerX, top + (mode == Mode::Recording ? 24 : height / 2));
+  if (mode == Mode::Recording) {
+    scene.fillCircle(centerX - 64, top + 50, 4, TFT_RED);
+    scene.setFont(&fonts::Font0);
+    scene.setTextSize(1);
+    scene.setTextDatum(middle_left);
+    scene.drawString("REC", centerX - 53, top + 50);
+    if (!captureStopped) {
+      for (int index = 0; index < 5; ++index) {
+        scene.fillRect(centerX - 19 + index * 16, top + 47, 12, 6,
+                       index < level ? TFT_DARKGREEN : TFT_LIGHTGREY);
+      }
+    }
+  }
+}
+
 void renderAvatar(uint32_t now) {
   if (!screenDirty && now - lastFrame < 80) {
     return;
@@ -383,12 +446,9 @@ void renderAvatar(uint32_t now) {
   const bool thinking = mode == Mode::Waiting;
   const bool eyesClosed = !thinking && elapsed % 4000 >= 3850;
   const int lean = thinking ? std::lround(20 * sway) : 0;
-  const int y = (M5.Display.height() - kFrameSize) / 2 + (thinking ? 0 : std::lround(4 * sway));
-  const int x = (M5.Display.width() - kFrameSize) / 2;
   static bool previousEyes = false;
   static int previousMouth = 0;
   static int previousLevel = 0;
-  static int previousY = 0;
   static int previousLean = 0;
   int mouth = 0;
   int level = 0;
@@ -408,32 +468,11 @@ void renderAvatar(uint32_t now) {
   }
   const bool redraw = screenDirty || lean != previousLean || eyesClosed != previousEyes ||
       mouth != previousMouth || level != previousLevel;
-  if (!redraw && y == previousY) {
-    return;
-  }
-  if (redraw) {
-    drawPose(eyesClosed, mouth, lean / 4.0f);
-    frame.fillRoundRect(72, 347, 256, 40, 12, mode == Mode::Recording ? TFT_MAROON : TFT_WHITE);
-    frame.setTextDatum(middle_center);
-    frame.setTextSize(2);
-    frame.setTextColor(mode == Mode::Recording ? TFT_WHITE : TFT_DARKGREY);
-    frame.drawString(modeStatus, kFrameSize / 2, mode == Mode::Recording ? 359 : 367);
-    if (mode == Mode::Recording && !captureStopped) {
-      for (int index = 0; index < 5; ++index) {
-        frame.fillRect(151 + index * 20, 372, 17, 5, index < level ? TFT_GREEN : TFT_LIGHTGREY);
-      }
-    }
-    drawIndicators();
-  }
-  M5.Display.startWrite();
-  if (y > previousY) {
-    M5.Display.fillRect(x, previousY, kFrameSize, y - previousY, TFT_WHITE);
-  } else if (y < previousY) {
-    M5.Display.fillRect(x, y + kFrameSize, kFrameSize, previousY - y, TFT_WHITE);
-  }
-  frame.pushSprite(x, y);
-  M5.Display.endWrite();
-  previousY = y;
+  if (!redraw) return;
+  drawPose(eyesClosed, mouth, lean / 4.0f);
+  drawSpeechBubble(level);
+  drawIndicators(scene, (scene.width() - kFrameSize) / 2);
+  scene.pushSprite(0, 0);
   previousLean = lean;
   previousEyes = eyesClosed;
   previousMouth = mouth;
@@ -452,12 +491,16 @@ void renderScreen(uint32_t now) {
   if (!screenDirty) return;
   if (screen == Screen::Settings) {
     StopwatchSettings::draw(frame, !kAudioBench);
+    scene.fillScreen(TFT_WHITE);
+    frame.pushSprite(&scene, (scene.width() - kFrameSize) / 2, (scene.height() - kFrameSize) / 2);
+    StopwatchSettings::drawBack(scene);
+    scene.pushSprite(0, 0);
   } else {
     frame.fillScreen(TFT_WHITE);
     frame.drawPng(kSumiBadge, sizeof(kSumiBadge));
-    if (badgeInfo) drawIndicators();
+    if (badgeInfo) drawIndicators(frame);
+    pushFrame((M5.Display.height() - kFrameSize) / 2);
   }
-  pushFrame((M5.Display.height() - kFrameSize) / 2);
   screenDirty = false;
 }
 
@@ -472,13 +515,13 @@ void updateNetwork(uint32_t now) {
           waitingForTurn = true;
           waitingSince = result.receivedMs;
           nextNetworkMs = now;
-          enter(Mode::Waiting, "Waiting for Sumi...");
+          enter(Mode::Waiting, kWaitingStatus);
         } else if ((result.status < 0 || result.status >= 500) && ++uploadAttempts < 3) {
           nextNetworkMs = now + 1000;
         } else {
           uploadPending = false;
-          const char* error = result.status == 409 ? "Sumi link unavailable"
-              : result.status == 424 ? "Audio service not set" : "Send failed";
+          const char* error = result.status == 409 ? "すみとの接続を確認してね"
+              : result.status == 424 ? "音声認識の設定を確認してね" : "うまく送れなかったよ";
           enter(Mode::Conversation, error);
         }
         break;
@@ -491,7 +534,7 @@ void updateNetwork(uint32_t now) {
           saveTiming(result.status);
           acknowledgeReply(result.request);
           if (!waitingForTurn && mode != Mode::Recording && mode != Mode::Sending) {
-            enter(Mode::Conversation, result.status == 415 ? "Local speech failed" : "Sumi reply failed");
+            enter(Mode::Conversation, result.status == 415 ? "声を作れなかったよ" : "お返事が届かなかったよ");
           }
         } else if (waitingForTurn) {
           if (result.status == 204) {
@@ -525,7 +568,7 @@ void updateNetwork(uint32_t now) {
 void updateScreen(uint32_t now) {
   const bool left = M5.BtnA.wasPressed();
   const bool right = M5.BtnB.wasPressed();
-  const bool power = M5.BtnPWR.wasClicked();
+  const bool power = updatePowerKey(now);
   if (power) {
     ++powerKeyClicks;
     Serial.printf("Sumi power click=%lu screen=%u\n", (unsigned long)powerKeyClicks, unsigned(screen));
@@ -620,7 +663,7 @@ void updateActivity(uint32_t now) {
     case Mode::Waiting:
       if (waitingForTurn && !networkBusy && now - waitingSince >= kReplyTimeoutMs) {
         waitingForTurn = false;
-        enter(Mode::Conversation, "Sumi reply timed out");
+        enter(Mode::Conversation, "お返事がまだ届かないよ");
       }
       break;
     case Mode::Speaking:
@@ -631,7 +674,7 @@ void updateActivity(uint32_t now) {
         audioStopped();
         if (!kAudioBench) acknowledgeReply(reply.request);
         if (waitingForTurn) {
-          enter(Mode::Waiting, "Waiting for Sumi...");
+          enter(Mode::Waiting, kWaitingStatus);
         } else {
           enter(Mode::Conversation, kRecordPrompt);
         }
@@ -645,11 +688,13 @@ void updateActivity(uint32_t now) {
 void setup() {
   auto config = M5.config();
   config.serial_baudrate = 115200;
+  config.pmic_button = false;  // Read BTN_STATUS directly rather than button IRQ flags.
   M5.begin(config);
   if (M5.getBoard() != m5::board_t::board_M5StopWatch) {
     return;
   }
   configurePowerKey();
+  M5.BtnPWR.setHoldThresh(1000);
 
   M5.Mic.end();
   M5.Speaker.end();
@@ -659,12 +704,15 @@ void setup() {
   frame.setPsram(true);
   portrait.setColorDepth(16);
   portrait.setPsram(true);
+  scene.setColorDepth(16);
+  scene.setPsram(true);
   if (!frame.createSprite(kFrameSize, kFrameSize) ||
+      !scene.createSprite(M5.Display.width(), M5.Display.height()) ||
       !portrait.createSprite(kPortraitSize, kPortraitSize) ||
       !portrait.drawPng(kSumiAvatar, sizeof(kSumiAvatar))) {
     return;
   }
-  portrait.setPivot(180, 330);
+  portrait.setPivot(kPortraitSize / 2, kPortraitSize);
   StopwatchSettings::load();
   {
     Preferences preferences;
@@ -713,8 +761,8 @@ void loop() {
     if (command == 'p') {
       uint8_t config = 0;
       const bool read = M5.Power.M5pm1.readRegister(0x49, &config, 1);
-      Serial.printf("Sumi power read=%u config=0x%02x clicks=%lu screen=%u uptime=%lu\n",
-                    read, config, (unsigned long)powerKeyClicks, unsigned(screen), (unsigned long)millis());
+      Serial.printf("Sumi power read=%u config=0x%02x raw=0x%02x clicks=%lu screen=%u uptime=%lu\n",
+                    read, config, powerKeyState, (unsigned long)powerKeyClicks, unsigned(screen), (unsigned long)millis());
     }
   }
   if (kAudioBench) {

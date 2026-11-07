@@ -19,4 +19,5 @@ void open();
 void close();
 Update update(int x, int y, bool pressed, bool firstPress, bool canChangeWifi);
 void draw(M5Canvas& frame, bool canChangeWifi);
+void drawBack(M5Canvas& screen);
 }
