@@ -2,6 +2,7 @@ import { MAX_RECORDING, transcribe } from "./audio.js";
 import { getSubscription } from "./events.js";
 import { InputError, json, readBytes } from "./http.js";
 import { authorizedDevice, deliverTurn, TURN_TTL } from "./turns.js";
+import { activeBridge } from "./bridge.js";
 
 const AUDIO_ATTEMPTS = 3;
 const LEASE_MS = 28_000;
@@ -41,13 +42,14 @@ async function upload(request, env, ctx, id) {
   if (existing) {
     return existing.audio_phase ? json({ id }, 202) : json({ error: "Request ID already used" }, 409);
   }
-  const subscription = await getSubscription(env);
+  const bridge = await activeBridge(env);
+  const subscription = bridge ? { id: "ui:" + bridge.session_id } : await getSubscription(env);
   if (!subscription) return json({ error: "No matching Sumi subscription" }, 409);
 
   const inserted = await env.DB.prepare(`
     INSERT INTO turns (id, subscription_id, created, expires, status, audio_phase, recording)
-    VALUES (?, ?, ?, ?, 'pending', 'transcribe', ?) ON CONFLICT(id) DO NOTHING
-  `).bind(id, subscription.id, now, now + TURN_TTL, bytes.buffer).run();
+    VALUES (?, ?, ?, ?, 'pending', ?, ?) ON CONFLICT(id) DO NOTHING
+  `).bind(id, subscription.id, now, now + TURN_TTL, bridge ? "bridge-transcribe" : "transcribe", bytes.buffer).run();
   if (inserted.meta.changes) schedule(env, ctx, id);
   else {
     const turn = await env.DB.prepare("SELECT audio_phase FROM turns WHERE id = ?").bind(id).first();
@@ -60,7 +62,7 @@ async function nextReply(env, ctx) {
   const now = Date.now();
   const reply = await env.DB.prepare(`
     SELECT id, status, answer FROM turns WHERE expires > ?
-      AND audio_phase IN ('transcribe', 'turn') AND status IN ('ready', 'failed')
+      AND audio_phase IN ('transcribe', 'turn', 'bridge-transcribe', 'bridge-turn') AND status IN ('ready', 'failed')
     ORDER BY created, id LIMIT 1
   `).bind(now).first();
   if (reply) {
@@ -74,7 +76,7 @@ async function nextReply(env, ctx) {
   if (env.OPENAI_API_KEY) {
     const candidate = await env.DB.prepare(`
       SELECT id FROM turns WHERE expires > ? AND audio_lease <= ? AND
-        ((audio_phase = 'transcribe' AND status = 'pending') OR
+        ((audio_phase IN ('transcribe', 'bridge-transcribe') AND status = 'pending') OR
          (audio_phase = 'turn' AND (status = 'pending' OR
           (status = 'delivering' AND lease_until <= ?))))
       ORDER BY created, id LIMIT 1
@@ -97,11 +99,14 @@ async function processAudio(env, id) {
     WHERE id = ? AND expires > ? AND audio_lease <= ?
   `).bind(id, now, now).first();
   if (!turn || turn.status === "failed") return;
-  if (turn.audio_phase === "transcribe") {
+  if (turn.audio_phase === "transcribe" || turn.audio_phase === "bridge-transcribe") {
     if (!await transcribeTurn(env, id)) return;
   } else if (turn.audio_phase !== "turn" || !["pending", "delivering"].includes(turn.status)) {
     return;
   }
+
+  // UI turns are claimed by the open panel; never also deliver an MCP event.
+  if (turn.subscription_id.startsWith("ui:")) return;
 
   const subscription = await getSubscription(env);
   if (subscription?.id === turn.subscription_id) {
@@ -120,14 +125,14 @@ async function transcribeTurn(env, id) {
   const lease = now + LEASE_MS;
   const turn = await env.DB.prepare(`
     UPDATE turns SET audio_lease = ?, audio_attempts = audio_attempts + 1
-    WHERE id = ? AND audio_phase = 'transcribe' AND status = 'pending' AND expires > ? AND audio_lease <= ?
+    WHERE id = ? AND audio_phase IN ('transcribe', 'bridge-transcribe') AND status = 'pending' AND expires > ? AND audio_lease <= ?
       AND audio_attempts < ?
-    RETURNING audio_attempts, recording
+    RETURNING audio_attempts, recording, audio_phase, created
   `).bind(lease, id, now, now, AUDIO_ATTEMPTS).first();
   if (!turn) {
     await env.DB.prepare(`
       UPDATE turns SET status = 'failed', recording = NULL, transcript = NULL, answer = NULL
-      WHERE id = ? AND audio_phase = 'transcribe' AND status = 'pending' AND audio_lease <= ? AND audio_attempts >= ?
+      WHERE id = ? AND audio_phase IN ('transcribe', 'bridge-transcribe') AND status = 'pending' AND audio_lease <= ? AND audio_attempts >= ?
     `).bind(id, now, AUDIO_ATTEMPTS).run();
     return false;
   }
@@ -141,9 +146,10 @@ async function transcribeTurn(env, id) {
       return false;
     }
     const updated = await env.DB.prepare(`
-      UPDATE turns SET audio_phase = 'turn', transcript = ?, recording = NULL, audio_lease = 0, audio_attempts = 0
+      UPDATE turns SET audio_phase = ?, transcript = ?, recording = NULL, audio_lease = 0, audio_attempts = 0
       WHERE id = ? AND audio_lease = ?
-    `).bind(transcript, id, lease).run();
+    `).bind(turn.audio_phase === "bridge-transcribe" ? "bridge-turn" : "turn", transcript, id, lease).run();
+    console.info(JSON.stringify({ event: "stopwatch_transcribed", id, elapsed_ms: Date.now() - turn.created }));
     return Boolean(updated.meta.changes);
   } catch {
     console.warn(JSON.stringify({ event: "stopwatch_transcription_failed" }));

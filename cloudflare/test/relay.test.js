@@ -65,7 +65,7 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   t.after(() => worker.dispose());
 
   const db = await worker.getD1Database("DB");
-  for (const file of ["0001_text_probe.sql", "0002_audio_turns.sql"]) {
+  for (const file of ["0001_text_probe.sql", "0002_audio_turns.sql", "0004_ui_bridge.sql"]) {
     const sql = await readFile(new URL("../migrations/" + file, import.meta.url), "utf8");
     await db.batch(sql.split(";").map((statement) => statement.trim()).filter(Boolean)
       .map((statement) => db.prepare(statement)));
@@ -265,4 +265,82 @@ test("OAuth and a signed fixed-text round trip", async (t) => {
   const logout = await fetch("/history/logout", { method: "POST", redirect: "manual", headers: { ...historyHeaders, Origin: ORIGIN } });
   assert.equal(logout.status, 303);
   assert.ok((await (await fetch("/history", { headers: historyHeaders })).text()).includes("オーナーキー"));
+
+  await t.test("UI bridge routes one transcript without an event or subscription", async () => {
+    const session = "1".repeat(32), other = "2".repeat(32), turnId = "3".repeat(32);
+    const control = (action, session_id = session, request_id) => rpc("tools/call", {
+      name: "control_stopwatch_bridge", arguments: { action, session_id, ...(request_id ? { request_id } : {}) },
+    });
+    const uiTool = tools.find(tool => tool.name === "open_stopwatch_bridge");
+    assert.equal((await rpc("tools/call", { name: uiTool.name })).result.structuredContent.bridge_active, false);
+    const resource = (await rpc("resources/read", { uri: uiTool._meta.ui.resourceUri })).result.contents[0];
+    assert.equal(resource.mimeType, "text/html;profile=mcp-app");
+    assert.ok(resource.text.includes("ui/message"));
+    assert.ok(resource.text.includes("event.source !== parent"));
+    assert.ok((await control("poll")).error);
+    assert.equal((await control("start")).result.structuredContent.active, true);
+    assert.equal((await rpc("tools/call", { name: uiTool.name })).result.structuredContent.bridge_active, true);
+    assert.ok((await control("start", other)).error);
+    assert.ok((await control("poll", "invalid")).error);
+    const eventCount = events.length;
+    assert.equal((await fetch("/device/turns/" + turnId, {
+      method: "PUT", headers: { ...deviceHeaders, "Content-Type": "application/octet-stream" }, body: new Uint8Array(6400),
+    })).status, 202);
+    let claims;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const phase = await db.prepare("SELECT audio_phase FROM turns WHERE id = ?").bind(turnId).first("audio_phase");
+      if (phase === "bridge-turn") break;
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    claims = await Promise.all([control("poll"), control("poll")]);
+    const requests = claims.map(item => item.result.structuredContent.request).filter(Boolean);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].request_id, turnId);
+    assert.equal(requests[0].text, "こんにちは、すみ。");
+    assert.equal((await control("poll")).result.structuredContent.request, null);
+    assert.equal(events.length, eventCount);
+    assert.equal((await poll()).status, 204);
+    assert.ok((await control("sent", other, turnId)).error);
+    assert.ok((await control("sent", session, turnId)).result);
+    const reply = { name: "submit_stopwatch_reply", arguments: { request_id: turnId, text: "ここでも聞こえるよ。" } };
+    assert.ok((await rpc("tools/call", reply)).result);
+    assert.ok((await rpc("tools/call", reply)).result);
+    const received = await poll();
+    assert.equal(received.headers.get("X-Reply-Id"), turnId);
+    assert.equal(await received.text(), "ここでも聞こえるよ。");
+    assert.equal((await fetch("/device/replies/" + turnId, { method: "DELETE", headers: deviceHeaders })).status, 204);
+    assert.ok((await control("sent", session, turnId)).result);
+    assert.equal((await db.prepare("SELECT answer FROM conversation_history WHERE id = ?").bind(turnId).first()).answer, "ここでも聞こえるよ。");
+    await control("stop", other);
+    assert.equal((await control("poll")).result.structuredContent.active, true);
+    await control("stop");
+    assert.ok((await control("poll")).error);
+    assert.equal((await fetch("/device/turns/" + "4".repeat(32), {
+      method: "PUT", headers: { ...deviceHeaders, "Content-Type": "application/octet-stream" }, body: new Uint8Array(6400),
+    })).status, 409);
+    assert.ok((await control("start")).result);
+    await db.prepare("UPDATE ui_bridge SET expires = 0").run();
+    assert.ok((await control("poll")).error);
+    assert.ok((await control("start", other)).result);
+    await control("stop", other);
+  });
+  await t.test("browser bridge uses owner login and same-origin requests", async () => {
+    const page = await fetch("/bridge");
+    assert.equal(page.status, 200);
+    assert.ok(page.headers.get("content-security-policy").includes("frame-ancestors 'none'"));
+    assert.ok(page.headers.get("content-security-policy").includes("connect-src 'self'"));
+    assert.ok((await page.text()).includes("このすみに接続"));
+    const session_id = "7".repeat(32);
+    const control = (action, headers = {}) => jsonPost("/bridge/control", { session_id, action }, headers);
+    assert.equal((await control("start")).status, 403);
+    assert.equal((await control("start", { Origin: ORIGIN })).status, 401);
+    const login = await loginHistory(OWNER_KEY);
+    const headers = { Origin: ORIGIN, Cookie: login.headers.get("set-cookie").split(";")[0] };
+    assert.equal((await control("start", { ...headers, Origin: "https://evil.example" })).status, 403);
+    assert.equal((await control("start", headers)).status, 200);
+    assert.equal((await control("poll", headers)).status, 200);
+    assert.equal((await control("invalid", headers)).status, 400);
+    assert.equal((await fetch("/bridge/control", { headers })).status, 405);
+    assert.equal((await control("stop", headers)).status, 200);
+  });
 });

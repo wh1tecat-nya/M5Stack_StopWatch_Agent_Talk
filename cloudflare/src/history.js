@@ -48,7 +48,8 @@ ${message ? `<p class="error">${escapeHtml(message)}</p>` : ""}
 <input type="password" name="key" required maxlength="128" autocomplete="off"></label><button>履歴を開く</button></form>`, status);
 }
 
-async function authorized(request, env) {
+export async function authorizedHistory(request, env) {
+  if (typeof env.OWNER_KEY !== "string" || env.OWNER_KEY.length < 32) return false;
   const token = sessionToken(request);
   if (!token) return false;
   const session = await env.OAUTH_KV.get("history:" + await sha256(token), "json");
@@ -94,7 +95,7 @@ export async function history(request, env) {
   }
   if (url.pathname !== "/history") return new Response(null, { status: 404 });
   if (request.method !== "GET") return new Response(null, { status: 405 });
-  if (!await authorized(request, env)) return loginPage();
+  if (!await authorizedHistory(request, env)) return loginPage();
   const cursor = url.searchParams.get("before");
   const parsed = cursor?.match(/^(\d{1,16})_([a-f0-9]{32})$/);
   if (cursor && !parsed) return page("<p>ページの指定を確認してください。</p>", 400);

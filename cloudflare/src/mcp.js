@@ -1,11 +1,12 @@
 import { DEVICE, EVENT, eventDefinition, getSubscription, replyTool, RpcError, subscribe, TURN_ID } from "./events.js";
 import { InputError, json, readText } from "./http.js";
 import { submitReply } from "./turns.js";
+import { activeBridge, BRIDGE_URI, bridgeResource, bridgeTools, controlBridge } from "./bridge.js";
 
 export const SCOPE = "mcp:stopwatch";
 const securitySchemes = [{ type: "oauth2", scopes: [SCOPE] }];
-const serverInfo = { name: "sumi-stopwatch-text", version: "0.1.0" };
-const capabilities = { events: {}, tools: {} };
+const serverInfo = { name: "sumi-stopwatch-text", version: "0.2.0" };
+const capabilities = { events: {}, tools: {}, resources: {} };
 const versions = ["2025-03-26", "2025-06-18", "2025-11-25"];
 const statusTool = {
   name: "get_stopwatch_status",
@@ -24,10 +25,10 @@ const statusTool = {
   },
   annotations: { readOnlyHint: true, openWorldHint: false },
 };
-const tools = [statusTool, replyTool].map((tool) => ({
+const tools = [statusTool, replyTool, ...bridgeTools].map((tool) => ({
   ...tool,
   securitySchemes,
-  _meta: { securitySchemes },
+  _meta: { ...tool._meta, securitySchemes },
 }));
 
 async function rpc(env, method, params) {
@@ -57,7 +58,26 @@ async function rpc(env, method, params) {
       return subscribe(env, params, true);
     case "tools/list":
       return { tools };
+    case "resources/list":
+      return { resources: [{ uri: BRIDGE_URI, name: "StopWatch conversation bridge", mimeType: "text/html;profile=mcp-app" }] };
+    case "resources/read":
+      if (params.uri !== BRIDGE_URI) throw new RpcError(-32602, "Unknown resource");
+      console.info(JSON.stringify({ event: "stopwatch_bridge_resource_read" }));
+      return { contents: [bridgeResource()] };
     case "tools/call": {
+      if (params.name === "open_stopwatch_bridge") {
+        const state = {
+          bridge_active: Boolean(await activeBridge(env)), start_requires_visible_page: true,
+          fallback_url: env.RELAY_ORIGIN + "/bridge",
+        };
+        console.info(JSON.stringify({ event: "stopwatch_bridge_open_requested", active: state.bridge_active }));
+        return { structuredContent: state, content: [{ type: "text", text: JSON.stringify(state) +
+          "\nこれは画面の表示要求です。画面が見えたことや中継開始の成功を意味しません。bridge_active=falseなら開始済みと報告しないでください。画面が出ない場合はfallback_urlを案内してください。Chrome拡張の接続と表示された開始ボタンの操作が必要です。" }] };
+      }
+      if (params.name === "control_stopwatch_bridge") {
+        const state = await controlBridge(env, params.arguments);
+        return { structuredContent: state, content: [{ type: "text", text: JSON.stringify(state) }] };
+      }
       if (params.name === statusTool.name) {
         const status = {
           device_id: DEVICE,

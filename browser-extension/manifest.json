@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Sumi StopWatch 会話ハブ",
+  "version": "0.1.0",
+  "description": "選択した既存すみの会話へ、StopWatchの発話を届けます。",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "action": { "default_popup": "popup.html", "default_title": "すみとStopWatchをつなぐ" },
+  "background": { "service_worker": "background.mjs", "type": "module" },
+  "externally_connectable": {
+    "matches": ["https://sumi-stopwatch-text.wh1tecat-sec.workers.dev/bridge*"]
+  }
+}

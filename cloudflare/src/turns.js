@@ -93,12 +93,18 @@ export async function submitReply(env, id, answer) {
   const updated = await env.DB.prepare(`
     UPDATE turns SET status = 'ready', answer = ?, lease_until = NULL
     WHERE id = ? AND expires > ? AND status IN ('delivering', 'waiting')
-      AND subscription_id = (SELECT id FROM subscription WHERE slot = 1 AND expires > ?)
-  `).bind(answer, id, now, now).run();
-  if (updated.meta.changes) return;
+      AND (subscription_id = (SELECT id FROM subscription WHERE slot = 1 AND expires > ?)
+        OR (subscription_id LIKE 'ui:%' AND audio_phase = 'bridge-turn'))
+    RETURNING created
+  `).bind(answer, id, now, now).first();
+  if (updated) {
+    console.info(JSON.stringify({ event: "stopwatch_reply_received", id, elapsed_ms: now - updated.created }));
+    return;
+  }
   const existing = await env.DB.prepare(`
     SELECT id FROM turns WHERE id = ? AND expires > ? AND status = 'ready' AND answer = ?
-      AND subscription_id = (SELECT id FROM subscription WHERE slot = 1 AND expires > ?)
+      AND (subscription_id = (SELECT id FROM subscription WHERE slot = 1 AND expires > ?)
+        OR (subscription_id LIKE 'ui:%' AND audio_phase = 'bridge-turn'))
   `).bind(id, now, answer, now).first();
   if (!existing) throw new RpcError(-32602, "Request expired, unknown, or already answered");
 }
