@@ -18,6 +18,9 @@ enum class Screen { Badge, Avatar, Settings, Off };
 constexpr int kFrameSize = 400;
 constexpr int kPortraitSize = 360;
 constexpr int kPortraitInset = (kFrameSize - kPortraitSize) / 2;
+constexpr float kPortraitZoom = 1.18f;
+constexpr int kPortraitCropX = -32;
+constexpr int kPortraitCropY = -5;
 constexpr size_t kCaptureChunk = VoiceLink::kRecordRate / 50;
 constexpr uint8_t kDim = 20;
 constexpr uint32_t kBadgeInfoMs = 6000;
@@ -247,19 +250,24 @@ void drawPose(bool eyesClosed, int mouth, int swayQ8) {
   } else {
     portrait.pushSprite(&scene, portraitX, portraitY);
   }
-  const int dx = portraitX - kPortraitInset;
-  const int dy = portraitY - kPortraitInset;
+  const auto faceX = [portraitX](int x) {
+    return portraitX + kPortraitCropX + int(std::lround((x - kPortraitInset) * kPortraitZoom));
+  };
+  const auto faceY = [portraitY](int y) {
+    return portraitY + kPortraitCropY + int(std::lround((y - kPortraitInset) * kPortraitZoom));
+  };
+  const auto radius = [](int value) { return int(std::lround(value * kPortraitZoom)); };
   if (eyesClosed) {
     const auto skin = scene.color565(250, 224, 216);
     const auto lashes = scene.color565(94, 63, 64);
-    scene.fillEllipse(183 + dx, 169 + dy, 16, 12, skin);
-    scene.fillEllipse(235 + dx, 171 + dy, 16, 12, skin);
-    scene.fillEllipse(183 + dx, 169 + dy, 12, 1, lashes);
-    scene.fillEllipse(235 + dx, 171 + dy, 12, 1, lashes);
+    scene.fillEllipse(faceX(183), faceY(169), radius(16), radius(12), skin);
+    scene.fillEllipse(faceX(235), faceY(171), radius(16), radius(12), skin);
+    scene.fillEllipse(faceX(183), faceY(169), radius(12), 1, lashes);
+    scene.fillEllipse(faceX(235), faceY(171), radius(12), 1, lashes);
   }
   if (mouth > 0) {
-    scene.fillEllipse(207 + dx, 200 + dy, 10, 7, scene.color565(253, 237, 230));
-    scene.fillEllipse(207 + dx, 200 + dy, 7, mouth, scene.color565(138, 76, 79));
+    scene.fillEllipse(faceX(207), faceY(200), radius(10), radius(7), scene.color565(253, 237, 230));
+    scene.fillEllipse(faceX(207), faceY(200), radius(7), radius(mouth), scene.color565(138, 76, 79));
   }
 }
 
@@ -614,13 +622,9 @@ void renderAvatar(uint32_t now) {
   }
   composeUs = micros() - composeStarted;
   const uint32_t pushStarted = micros();
-  int32_t clipX = 0, clipY = 0, clipW = 0, clipH = 0;
-  if (partial) {
-    M5.Display.getClipRect(&clipX, &clipY, &clipW, &clipH);
-    M5.Display.setClipRect(portraitX - kSwayMargin, portraitY, kPortraitSize + 2 * kSwayMargin, kPortraitSize);
-  }
+  // Flush the complete panel: a clipped AMOLED flush leaves a visible boundary
+  // through the bubble even when the source sprite has no dark pixels there.
   scene.pushSprite(0, 0);
-  if (partial) M5.Display.setClipRect(clipX, clipY, clipW, clipH);
   pushUs = micros() - pushStarted;
   ++animationFrames;
   const uint32_t measured = millis();
@@ -866,7 +870,8 @@ void setup() {
   if (!frame.createSprite(kFrameSize, kFrameSize) ||
       !scene.createSprite(M5.Display.width(), M5.Display.height()) ||
       !portrait.createSprite(kPortraitSize, kPortraitSize) ||
-      !portrait.drawPng(kSumiAvatar, sizeof(kSumiAvatar))) {
+      !portrait.drawPng(kSumiAvatar, sizeof(kSumiAvatar), kPortraitCropX, kPortraitCropY,
+                        0, 0, 0, 0, kPortraitZoom, kPortraitZoom)) {
     return;
   }
   for (int row = 0; row < kPortraitSize; ++row) {
