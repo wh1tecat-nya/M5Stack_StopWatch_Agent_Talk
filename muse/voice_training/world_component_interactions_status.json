@@ -1,0 +1,381 @@
+{
+  "state": "combined_component_feedback_received_source_probe_prepared",
+  "feedback": {
+    "user_feedback": "「かな」はあまり変わっていない気がする。全体的には①（包絡だけ教師へ戻す）が一番良くなっている。",
+    "interpretation": "包絡が引き続き全体の改善対象。「かな」の残差は単一成分の交換では明確な改善を確認できず、成分間の組み合わせを調べる。",
+    "scope": "短い2文目の主観比較。単独原因や他の文章への一般化は断定しない。"
+  },
+  "baseline": "muse/.cache/irodori-world-envelope-baseline-20261113",
+  "result_directory": "muse/.cache/irodori-world-component-interactions-20261113",
+  "new_tests_passed": 2,
+  "listening_conditions": [
+    "teacher_envelope_aperiodicity",
+    "teacher_envelope_pitch",
+    "teacher_all"
+  ],
+  "listening_reason": "全体が最も改善した包絡交換を共通にし、追加の非周期成分と音程・有声判定のどちらが語尾を改善するか比較する。教師全成分を比較基準として併記する。",
+  "checkpoint_sha256": "1fd7d966f410f7e29aee6e1ee2f8ad64bfd87cbd8847057be93931d2384616d1",
+  "weights_sha256": "75c2b800975f31b5204b926df5f1cef6eaabcd6ee5f684d8a66c9a19d194382b",
+  "source_code_sha256": {
+    "probe_world_component_interactions.py": "4f526c7e8c6dafd0ff04d2346780b94a0cc3c364c157391d5c54edc6c576568a",
+    "world_pitch_diagnosis.py": "328a6db3e5720d16d7a75c5a24b40590e2a2ce8ed5d2d6b15a2e8fdc0f08058a",
+    "world_vocoder.py": "b05277eb2333b6dfb933e4f88c51313aaab6ac2a512783910e03ea2c6867c17e",
+    "world_envelope_export.py": "a7575057e5a51fb7cb951c79a315861ec3a8ec3bfe8134ea1dadef4bdd43a0bf",
+    "compare_band_results.py": "7e5cb1b2cf547dd3bffba9620dd4e2932d277866375e6d4fe51d4ee4431d1302"
+  },
+  "previous_waveforms_reproduced": 5,
+  "conditions": {
+    "model_all": {
+      "envelope": "predicted",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_envelope": {
+      "envelope": "teacher",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_aperiodicity": {
+      "envelope": "predicted",
+      "aperiodicity": "teacher",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_pitch_voicing": {
+      "envelope": "predicted",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "teacher"
+    },
+    "teacher_envelope_aperiodicity": {
+      "envelope": "teacher",
+      "aperiodicity": "teacher",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_envelope_pitch": {
+      "envelope": "teacher",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "teacher"
+    },
+    "teacher_aperiodicity_pitch": {
+      "envelope": "predicted",
+      "aperiodicity": "teacher",
+      "pitch_and_voicing": "teacher"
+    },
+    "teacher_all": {
+      "envelope": "teacher",
+      "aperiodicity": "teacher",
+      "pitch_and_voicing": "teacher"
+    }
+  },
+  "wav_validation": {
+    "model_all": {
+      "sha256": "3e3db1fa24c64fa6f6ba6f5ac0768d065165667d57b4473261a9c83d377456b8",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000005147609327,
+      "peak": 0.76715087890625,
+      "rails": 0
+    },
+    "teacher_envelope": {
+      "sha256": "679d9f3014b3451dcb660dc9bee0c5df4be6d1a67c1eafcc4c42a8d234cacaa7",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000002264430095,
+      "peak": 0.68048095703125,
+      "rails": 0
+    },
+    "teacher_aperiodicity": {
+      "sha256": "0bd2f009aff3aea5eb38230072e60fe2a6b7aa9b6abaeaba153e960a2ee3f86b",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999999071047586,
+      "peak": 0.766571044921875,
+      "rails": 0
+    },
+    "teacher_pitch_voicing": {
+      "sha256": "57bfe64577768ca37005911a792b659484d145314aa033d6b74ee43036e0d4d5",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000002104802933,
+      "peak": 0.79022216796875,
+      "rails": 0
+    },
+    "teacher_envelope_aperiodicity": {
+      "sha256": "584e89718182304fe5c26bc1bd39a91beaefa03ef74c48351f3afa056c6f5b95",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000001754905599,
+      "peak": 0.678466796875,
+      "rails": 0
+    },
+    "teacher_envelope_pitch": {
+      "sha256": "5acbc427289ec648ea164958080c8fc6bbd3202e5f08a3d7e8bb85156205b8a3",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.100000039665321,
+      "peak": 0.680694580078125,
+      "rails": 0
+    },
+    "teacher_aperiodicity_pitch": {
+      "sha256": "c7aa74f542d5b8a06e5a9ac4560193461f057113e0f6f60fe8760e5dd6ba7e97",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000002394227486,
+      "peak": 0.789886474609375,
+      "rails": 0
+    },
+    "teacher_all": {
+      "sha256": "2b417e3d07bbf02de6cd801e244bcff65cba8ddd8d72c3eb0145fca2c4aad257",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999999099020986,
+      "peak": 0.682098388671875,
+      "rails": 0
+    }
+  },
+  "tail_windows": [
+    {
+      "start_seconds": 3.0,
+      "end_seconds": 3.2,
+      "pitch": {
+        "joint_voiced_frames": 29,
+        "pitch_mae_cents_joint_voiced": 51.22507609676929,
+        "pitch_bias_cents_joint_voiced": 13.628864209114093,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.0,
+        "predicted_step_mae_cents": 15.959083209582227,
+        "reference_step_mae_cents": 53.36318235461644,
+        "step_error_mae_cents": 54.01560526990432,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.175,
+        "predicted_uv_transitions": 4,
+        "reference_uv_transitions": 4,
+        "predicted_runs_under_20ms": 1,
+        "reference_runs_under_20ms": 2
+      },
+      "ap_gate_mismatch_frames": 8,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 3,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 2
+    },
+    {
+      "start_seconds": 3.2,
+      "end_seconds": 3.4,
+      "pitch": {
+        "joint_voiced_frames": 18,
+        "pitch_mae_cents_joint_voiced": 52.12366279191924,
+        "pitch_bias_cents_joint_voiced": -14.68796344275001,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.0,
+        "predicted_step_mae_cents": 16.747698276115262,
+        "reference_step_mae_cents": 38.81212023625788,
+        "step_error_mae_cents": 32.7986730491118,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.3,
+        "predicted_uv_transitions": 2,
+        "reference_uv_transitions": 4,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 1
+      },
+      "ap_gate_mismatch_frames": 10,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 1,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    },
+    {
+      "start_seconds": 3.4,
+      "end_seconds": 3.6,
+      "pitch": {
+        "joint_voiced_frames": 7,
+        "pitch_mae_cents_joint_voiced": 139.64148140020137,
+        "pitch_bias_cents_joint_voiced": 139.64148140020137,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.2857142857142857,
+        "predicted_step_mae_cents": 13.659406315542887,
+        "reference_step_mae_cents": 58.59818052395409,
+        "step_error_mae_cents": 61.50412003815624,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.075,
+        "predicted_uv_transitions": 1,
+        "reference_uv_transitions": 1,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 2,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 0,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    },
+    {
+      "start_seconds": 3.6,
+      "end_seconds": 3.8,
+      "pitch": {
+        "joint_voiced_frames": 14,
+        "pitch_mae_cents_joint_voiced": 44.520941514758434,
+        "pitch_bias_cents_joint_voiced": 44.510674537628674,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.0,
+        "predicted_step_mae_cents": 16.544043085240517,
+        "reference_step_mae_cents": 33.127184990974385,
+        "step_error_mae_cents": 31.459043461109943,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.0,
+        "predicted_uv_transitions": 1,
+        "reference_uv_transitions": 1,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 0,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 0,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    },
+    {
+      "start_seconds": 3.8,
+      "end_seconds": 4.0,
+      "pitch": {
+        "joint_voiced_frames": 40,
+        "pitch_mae_cents_joint_voiced": 40.065836540959936,
+        "pitch_bias_cents_joint_voiced": -0.7968925436525751,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.0,
+        "predicted_step_mae_cents": 10.697475814820791,
+        "reference_step_mae_cents": 21.027043095379177,
+        "step_error_mae_cents": 20.181294430188736,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.0,
+        "predicted_uv_transitions": 0,
+        "reference_uv_transitions": 0,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 0,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 0,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    },
+    {
+      "start_seconds": 4.0,
+      "end_seconds": 4.2,
+      "pitch": {
+        "joint_voiced_frames": 31,
+        "pitch_mae_cents_joint_voiced": 59.03589973248956,
+        "pitch_bias_cents_joint_voiced": 7.549846898968686,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.03225806451612903,
+        "predicted_step_mae_cents": 12.526551228877603,
+        "reference_step_mae_cents": 60.45069709275358,
+        "step_error_mae_cents": 60.39060110910001,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.025,
+        "predicted_uv_transitions": 1,
+        "reference_uv_transitions": 1,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 4,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 1,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 2
+    },
+    {
+      "start_seconds": 4.2,
+      "end_seconds": 4.4,
+      "pitch": {
+        "joint_voiced_frames": 24,
+        "pitch_mae_cents_joint_voiced": 46.45804260225699,
+        "pitch_bias_cents_joint_voiced": -11.771883843812398,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.0,
+        "predicted_step_mae_cents": 6.397195111443026,
+        "reference_step_mae_cents": 45.6322404962511,
+        "step_error_mae_cents": 46.19890504069261,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.05,
+        "predicted_uv_transitions": 1,
+        "reference_uv_transitions": 1,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 1,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 1,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    },
+    {
+      "start_seconds": 4.4,
+      "end_seconds": 4.6,
+      "pitch": {
+        "joint_voiced_frames": 20,
+        "pitch_mae_cents_joint_voiced": 76.36593245701943,
+        "pitch_bias_cents_joint_voiced": -63.423650182068286,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.1,
+        "predicted_step_mae_cents": 15.275579313658454,
+        "reference_step_mae_cents": 68.62433945015839,
+        "step_error_mae_cents": 69.44346735714795,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.375,
+        "predicted_uv_transitions": 2,
+        "reference_uv_transitions": 1,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 2,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 15,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 2
+    },
+    {
+      "start_seconds": 4.6,
+      "end_seconds": 4.8,
+      "pitch": {
+        "joint_voiced_frames": 0,
+        "pitch_mae_cents_joint_voiced": null,
+        "pitch_bias_cents_joint_voiced": null,
+        "pitch_error_over_200c_fraction_joint_voiced": null,
+        "predicted_step_mae_cents": null,
+        "reference_step_mae_cents": null,
+        "step_error_mae_cents": null,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.4,
+        "predicted_uv_transitions": 1,
+        "reference_uv_transitions": 2,
+        "predicted_runs_under_20ms": 1,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 15,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 1,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    },
+    {
+      "start_seconds": 4.8,
+      "end_seconds": 4.965,
+      "pitch": {
+        "joint_voiced_frames": 0,
+        "pitch_mae_cents_joint_voiced": null,
+        "pitch_bias_cents_joint_voiced": null,
+        "pitch_error_over_200c_fraction_joint_voiced": null,
+        "predicted_step_mae_cents": null,
+        "reference_step_mae_cents": null,
+        "step_error_mae_cents": null,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.0,
+        "predicted_uv_transitions": 0,
+        "reference_uv_transitions": 0,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 0
+      },
+      "ap_gate_mismatch_frames": 0,
+      "model_f0_voiced_but_ap_nonperiodic_frames": 0,
+      "teacher_f0_voiced_but_ap_nonperiodic_frames": 0
+    }
+  ],
+  "diagnostic_only": true,
+  "new_training_performed": false,
+  "weights_changed": false,
+  "firmware_changed": false,
+  "quality_approved": false,
+  "limitations": [
+    "単一成分で残る違和感を調べる教師依存の組み合わせ診断です。改善モデルではありません。",
+    "数値の時間窓を単語に対応付けていません。聴感の原因は試聴で別途確認します。",
+    "成分間の依存と教師分析の誤差があり、一つの成分だけを原因と断定できません。",
+    "全文RMSの一致であり、LUFSの一致ではありません。",
+    "任意文章TTSとC152での動作は未完成・未検証です。"
+  ],
+  "listening_feedback": {
+    "user_feedback": "全体の性質は②（包絡＋音程と有声判定を教師へ戻す）が近い。人間っぽい抑揚は①（包絡＋非周期成分を教師へ戻す）が良い。「かな」自体はどれも変わらず。",
+    "timbre_preference": "teacher_envelope_pitch",
+    "prosody_preference": "teacher_envelope_aperiodicity",
+    "interpretation": "声質の近さと自然な抑揚を別の評価軸として扱う。教師の音程への一致だけで自然さを判断しない。",
+    "reference_inclusion": "「どれも」に③基準Bを含むかは確認待ち。先の「Bはほぼ気にならない」との差を勝手に解釈しない。",
+    "scope": "提示した数の比較文。改善モデルや任意文章の品質を承認した回答ではない。"
+  },
+  "listening_feedback_pending": false,
+  "next_action": "教師再合成にも残る語尾について、音程推定と非周期成分の有声判定を診断する。",
+  "reference_clarification": "組み合わせ比較の③基準Bにも同程度の揺らぎがある。",
+  "reference_clarification_pending": false
+}

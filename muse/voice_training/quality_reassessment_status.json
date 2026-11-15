@@ -1,0 +1,33 @@
+{
+  "date_jst": "2026-11-12",
+  "state": "B_accepted_C_rejected",
+  "user_feedback": "Bは問題ない、Cで加わる",
+  "diagnostic_3_quality_target_accepted": false,
+  "mf07_voice_preference_preserved": true,
+  "original_teacher_quality_reassessment_pending": false,
+  "comparison_directory": "muse/.cache/irodori-quality-reassessment-20261112",
+  "conditions": {
+    "A_irodori_48k": "元の48kHz生成出力に一定ゲインのみ。",
+    "B_irodori_22k": "Aの音量調整前データを学習時と同じresample_poly(147,320)で22,050Hzへ変換し、一定ゲイン。",
+    "C_diagnostic_3": "以前に試聴した教師振幅＋小型モデル位相の診断③に一定ゲインのみ。"
+  },
+  "source_sha256": {
+    "teacher": "14477312d3543f1b52b77b73f73b9fdd3ea5c00415b7965ef096ad0857de578c",
+    "diagnostic_3": "fb2eead93b998c1e3f5b15838091fa102e203dd7a8bb6d1e5f4d0e597247ef33"
+  },
+  "output_sha256": {
+    "A_irodori_48k": "be88de6298db281a5b4cc41ab61dda323cdb4ad4baac64670fa1b77aac1f44d1",
+    "B_irodori_22k": "5bcfe7d28d56dce7f014ab0f822864f3ef67e1024ceff282b1ee031b92452b89",
+    "C_diagnostic_3": "c75f5366f8825820d4f2e4488124cd4aaafa71db8a5e5fc00043a7f194a28da3"
+  },
+  "validation": "Same text and 12.8s duration; mean RMS 0.1 with inter-file difference below 2e-6; no PCM rails; source hashes and quantization error verified. Not LUFS matched.",
+  "new_training_performed": false,
+  "firmware_changed": false,
+  "colab_gpu_stopped": true,
+  "next_action": "予測WORLD音声を暫定合格の教師パラメータ再合成と比較する。声の高さ・有声無声・音色の予測誤差を改善し、音質確認後に量子化・C152での速度とメモリーの検証へ進む。",
+  "previous_user_feedback": "改めて聞くと、目標音声もかなり違和感はある。デジタル越し がわかるようなエフェクトが掛かった感覚",
+  "accepted_reference": "B_irodori_22k",
+  "accepted_scope": "今回の同一返答文のB。Aについての個別回答や全文章の無欠陥は未確認。",
+  "world_probe_experiment": "world_probe_status.json",
+  "world_training_experiment": "world_training_status.json"
+}

@@ -1,0 +1,157 @@
+{
+  "sample_id": "mf07-expand_test_03",
+  "source_sha256": "67940777dcff1cd16b8ea4246e8630c88cea3110de7405ece6c54cbe9d74af3f",
+  "pyworld": "0.3.5",
+  "source_probe_report_sha256": "52611030ceaa69bc65d0c267e4e47c2f74a8c31950dc53137f05b5eab27008c0",
+  "conditions": {
+    "current_dio": {
+      "pitch_method": "dio",
+      "d4c_threshold": 0.85
+    },
+    "dio_without_ap_gate": {
+      "pitch_method": "dio",
+      "d4c_threshold": 0.0
+    },
+    "harvest": {
+      "pitch_method": "harvest",
+      "d4c_threshold": 0.85
+    }
+  },
+  "all_conditions_use_stonemask": true,
+  "full_resolution_parameters": true,
+  "previous_original_and_resynthesis_pcm_reproduced": true,
+  "gate_comparison_f0_and_spectral_envelope_identical": true,
+  "analysis_statistics": {
+    "current_dio": {
+      "full": {
+        "frames": 993,
+        "f0_voiced_frames": 535,
+        "f0_voicing_transitions": 30,
+        "f0_voiced_but_fully_aperiodic_frames": 27,
+        "periodic_frames": 508,
+        "periodicity_transitions": 42
+      },
+      "last_second": {
+        "frames": 200,
+        "f0_voiced_frames": 98,
+        "f0_voicing_transitions": 5,
+        "f0_voiced_but_fully_aperiodic_frames": 4,
+        "periodic_frames": 94,
+        "periodicity_transitions": 11
+      }
+    },
+    "dio_without_ap_gate": {
+      "full": {
+        "frames": 993,
+        "f0_voiced_frames": 535,
+        "f0_voicing_transitions": 30,
+        "f0_voiced_but_fully_aperiodic_frames": 0,
+        "periodic_frames": 535,
+        "periodicity_transitions": 30
+      },
+      "last_second": {
+        "frames": 200,
+        "f0_voiced_frames": 98,
+        "f0_voicing_transitions": 5,
+        "f0_voiced_but_fully_aperiodic_frames": 0,
+        "periodic_frames": 98,
+        "periodicity_transitions": 5
+      }
+    },
+    "harvest": {
+      "full": {
+        "frames": 993,
+        "f0_voiced_frames": 678,
+        "f0_voicing_transitions": 12,
+        "f0_voiced_but_fully_aperiodic_frames": 93,
+        "periodic_frames": 585,
+        "periodicity_transitions": 42
+      },
+      "last_second": {
+        "frames": 200,
+        "f0_voiced_frames": 95,
+        "f0_voicing_transitions": 3,
+        "f0_voiced_but_fully_aperiodic_frames": 4,
+        "periodic_frames": 91,
+        "periodicity_transitions": 7
+      }
+    }
+  },
+  "wav_validation": {
+    "irodori_original": {
+      "sha256": "890089238080025647803fa521a5dd52044aa94afb8c8ae9f7012a4dc528ba4d",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999997898847046,
+      "peak": 0.725982666015625,
+      "rails": 0
+    },
+    "current_dio": {
+      "sha256": "1b6e1c50ea2d215586274ddbe5077b5fafb74ab4683d4f1abe1bd0c2aac099e7",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000000854511418,
+      "peak": 0.678619384765625,
+      "rails": 0
+    },
+    "dio_without_ap_gate": {
+      "sha256": "0cfa61272a52d4405a0e0eb2e63726f8c0d4f1292dc774e351aaf81c24e8271b",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999999109763283,
+      "peak": 0.67822265625,
+      "rails": 0
+    },
+    "harvest": {
+      "sha256": "a80987ff0ed659ef0f8339c7f689c44216bc4565da19010192b90b7cc0ef33fe",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999991530803806,
+      "peak": 0.672454833984375,
+      "rails": 0
+    }
+  },
+  "code_sha256": {
+    "world_analysis_variants.py": "b9fb702e564c658a8fad79c9410eaeb9f68056776ba34873dde5ffcf085e0bde",
+    "probe_world_analysis_variants.py": "c2089e6ba7dc556d459b51bdef63040d0d52bc4eface7440b699cff66a96d217",
+    "world_vocoder.py": "b05277eb2333b6dfb933e4f88c51313aaab6ac2a512783910e03ea2c6867c17e",
+    "compare_band_results.py": "7e5cb1b2cf547dd3bffba9620dd4e2932d277866375e6d4fe51d4ee4431d1302",
+    "test_world_analysis_variants.py": "315302fc9f9e465240a59922c66c22a1b6df333e792706b1c70083d653e5d4f7"
+  },
+  "references": [
+    "https://github.com/JeremyCCHsu/Python-Wrapper-for-World-Vocoder/blob/master/pyworld/pyworld.pyx",
+    "https://github.com/mmorise/World/blob/master/src/d4c.cpp",
+    "https://github.com/JeremyCCHsu/Python-Wrapper-for-World-Vocoder/blob/master/demo/demo.py"
+  ],
+  "diagnostic_only": true,
+  "weights_changed": false,
+  "new_training_performed": false,
+  "firmware_changed": false,
+  "quality_approved": false,
+  "limitations": [
+    "分析パラメータは教師音声から求めています。小型モデルの改善結果ではありません。",
+    "追加の有声判定を外すと不要な周期音が出る可能性があり、聴感確認なしで採用しません。",
+    "Harvest条件は音程推定に加え、その音程で包絡と非周期成分を再分析します。",
+    "末尾1秒は単語境界を確定した区間ではありません。判定回数は音質の点数ではありません。",
+    "教師声質の問題や吃音とは断定しません。音声の分析・再合成による変化を比較します。",
+    "平均RMS一致でありLUFS一致ではありません。実機動作と任意文章TTSは未完成です。"
+  ],
+  "state": "no_clear_perceptual_improvement_not_adopted",
+  "feedback": {
+    "reference_clarification": "組み合わせ比較の③基準Bにも同程度の揺らぎがある。",
+    "source_comparison": "元音声①では気にならないが、圧縮なし再合成②でも若干気になる。吃音寄りの音で、声質の影響ではないかとの見解。",
+    "interpretation": "小型モデルの予測や特徴圧縮だけでは語尾の残差を説明できない。元音声から分析・再合成する段階にも違和感が出る。声質との相性は仮説であり、吃音や元音声の欠陥とは断定しない。",
+    "scope": "数の比較文の語尾。これまで確認した全体の大幅改善は維持する。"
+  },
+  "result_directory": "muse/.cache/irodori-world-analysis-variants-20261113",
+  "tests_passed": 2,
+  "listening_feedback_pending": false,
+  "baseline": "muse/.cache/irodori-world-envelope-baseline-20261113",
+  "next_action": "大幅改善した包絡補正版と現行分析方式を維持し、C++予測器の移植と本体動作へ向けた検証を進める。",
+  "listening_feedback": {
+    "user_feedback": "大きくは変わらない。②は若干全体的に違うような気もするが分からない。③は変わりない気がする。「かな」はどれも大きく変わらず、③がごく僅かに改善したかもしれない。",
+    "interpretation": "明確で再現性のある聴感改善は確認できない。追加有声判定を外す案・Harvestへ変更する案とも現行方式には採用しない。",
+    "residual": "「かな」の再合成由来の引っかかりは未解決。声質と再合成方式の相性は仮説として残す。"
+  },
+  "adopted_conditions": []
+}

@@ -1,0 +1,410 @@
+{
+  "date_jst": "2026-11-13",
+  "state": "minor_subjective_improvement_not_adopted",
+  "user_feedback": "前モデルに比べると全体的に、大幅に改善。しかし、揺れはまだ全体的に有る。「M5Stack」の中盤辺りから顕著に現れ始める。",
+  "base_sha256": "83c385a3c61cef00c76bf68acd97aa6b9dd4e311366e9e2050324191dacbcd67",
+  "parameters": 78720,
+  "receptive_frames": {
+    "control": 27,
+    "context": 93
+  },
+  "receptive_ms": {
+    "control": 135,
+    "context": 465
+  },
+  "future_context_ms": {
+    "control": 65,
+    "context": 230
+  },
+  "training_halo_frames": 48,
+  "training_segment_frames": 96,
+  "input_files_verified": 108,
+  "seed": 20261114,
+  "learning_rate": 0.0002,
+  "batch": 8,
+  "conditions": {
+    "control": {
+      "updates": 5000,
+      "best_step": 4900,
+      "checkpoint_sha256": "d69c256010956318fc0927ac70ca4593d0b207c618761c74e9ee911e2cf4dd3a",
+      "training_seconds": 83.33497625007294,
+      "initial_validation_score": 1.3280913591384889,
+      "dilations": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "validation": {
+        "score": 1.318674385547638,
+        "legacy_loss": 0.36455610394477844,
+        "envelope_mae_db": 6.38348355293274,
+        "envelope_step_error_db": 5.90043683052063,
+        "ap_gate_error": 0.0701724611222744,
+        "uv_error": 0.09950568303465843,
+        "pitch_mae_cents_joint_voiced": 60.37150344848633
+      },
+      "test": {
+        "score": 1.3039919972419738,
+        "legacy_loss": 0.368160080909729,
+        "envelope_mae_db": 6.198097467422485,
+        "envelope_step_error_db": 5.811904048919677,
+        "ap_gate_error": 0.07807877212762833,
+        "uv_error": 0.09674696400761604,
+        "pitch_mae_cents_joint_voiced": 65.3438003540039
+      },
+      "reply_per_second": [
+        {
+          "start_seconds": 0,
+          "end_seconds": 1,
+          "envelope_mae_db": 10.413033485412598,
+          "envelope_step_error_db": 8.916485786437988,
+          "ap_gate_error": 0.054999999701976776,
+          "uv_error": 0.1599999964237213,
+          "pitch_mae_cents_joint_voiced": 80.92503356933594
+        },
+        {
+          "start_seconds": 1,
+          "end_seconds": 2,
+          "envelope_mae_db": 3.6410932540893555,
+          "envelope_step_error_db": 3.408829927444458,
+          "ap_gate_error": 0.029999999329447746,
+          "uv_error": 0.04500000178813934,
+          "pitch_mae_cents_joint_voiced": 41.244178771972656
+        },
+        {
+          "start_seconds": 2,
+          "end_seconds": 3,
+          "envelope_mae_db": 6.942714691162109,
+          "envelope_step_error_db": 6.574428558349609,
+          "ap_gate_error": 0.10000000149011612,
+          "uv_error": 0.17499999701976776,
+          "pitch_mae_cents_joint_voiced": 82.44132995605469
+        },
+        {
+          "start_seconds": 3,
+          "end_seconds": 4,
+          "envelope_mae_db": 3.820791244506836,
+          "envelope_step_error_db": 3.5702321529388428,
+          "ap_gate_error": 0.07000000029802322,
+          "uv_error": 0.11500000208616257,
+          "pitch_mae_cents_joint_voiced": 72.06066131591797
+        },
+        {
+          "start_seconds": 4,
+          "end_seconds": 5,
+          "envelope_mae_db": 3.8346893787384033,
+          "envelope_step_error_db": 3.600938081741333,
+          "ap_gate_error": 0.029999999329447746,
+          "uv_error": 0.03500000014901161,
+          "pitch_mae_cents_joint_voiced": 51.15022659301758
+        },
+        {
+          "start_seconds": 5,
+          "end_seconds": 6,
+          "envelope_mae_db": 6.108516216278076,
+          "envelope_step_error_db": 4.632084369659424,
+          "ap_gate_error": 0.04500000178813934,
+          "uv_error": 0.1850000023841858,
+          "pitch_mae_cents_joint_voiced": 184.7357940673828
+        },
+        {
+          "start_seconds": 6,
+          "end_seconds": 7,
+          "envelope_mae_db": 9.322256088256836,
+          "envelope_step_error_db": 7.771536350250244,
+          "ap_gate_error": 0.11999999731779099,
+          "uv_error": 0.20499999821186066,
+          "pitch_mae_cents_joint_voiced": 62.46437454223633
+        },
+        {
+          "start_seconds": 7,
+          "end_seconds": 8,
+          "envelope_mae_db": 6.108160018920898,
+          "envelope_step_error_db": 5.148021697998047,
+          "ap_gate_error": 0.07500000298023224,
+          "uv_error": 0.06499999761581421,
+          "pitch_mae_cents_joint_voiced": 99.00764465332031
+        },
+        {
+          "start_seconds": 8,
+          "end_seconds": 9,
+          "envelope_mae_db": 6.740298271179199,
+          "envelope_step_error_db": 8.060807228088379,
+          "ap_gate_error": 0.07000000029802322,
+          "uv_error": 0.13500000536441803,
+          "pitch_mae_cents_joint_voiced": 49.20570373535156
+        },
+        {
+          "start_seconds": 9,
+          "end_seconds": 10,
+          "envelope_mae_db": 7.710793495178223,
+          "envelope_step_error_db": 7.376516819000244,
+          "ap_gate_error": 0.054999999701976776,
+          "uv_error": 0.08500000089406967,
+          "pitch_mae_cents_joint_voiced": 62.64179992675781
+        },
+        {
+          "start_seconds": 10,
+          "end_seconds": 11,
+          "envelope_mae_db": 4.226174831390381,
+          "envelope_step_error_db": 3.8720197677612305,
+          "ap_gate_error": 0.10499999672174454,
+          "uv_error": 0.0949999988079071,
+          "pitch_mae_cents_joint_voiced": 60.32072830200195
+        },
+        {
+          "start_seconds": 11,
+          "end_seconds": 12,
+          "envelope_mae_db": 4.392714023590088,
+          "envelope_step_error_db": 3.9810032844543457,
+          "ap_gate_error": 0.07999999821186066,
+          "uv_error": 0.0949999988079071,
+          "pitch_mae_cents_joint_voiced": 80.97981262207031
+        },
+        {
+          "start_seconds": 12,
+          "end_seconds": 12.8,
+          "envelope_mae_db": 7.403090000152588,
+          "envelope_step_error_db": 5.637564182281494,
+          "ap_gate_error": 0.08074533939361572,
+          "uv_error": 0.03726708143949509,
+          "pitch_mae_cents_joint_voiced": 35.1844596862793
+        }
+      ]
+    },
+    "context": {
+      "updates": 5000,
+      "best_step": 4900,
+      "checkpoint_sha256": "6d1af2387f9a7173bef480fe06a682c15bbace62938905e7fbf990f27b791d0d",
+      "training_seconds": 200.37028012506198,
+      "initial_validation_score": 1.9052805185317994,
+      "dilations": [
+        1,
+        2,
+        4,
+        8
+      ],
+      "validation": {
+        "score": 1.3028064966201782,
+        "legacy_loss": 0.36138694584369657,
+        "envelope_mae_db": 6.3979442596435545,
+        "envelope_step_error_db": 5.941966772079468,
+        "ap_gate_error": 0.07587526142597198,
+        "uv_error": 0.09919382035732269,
+        "pitch_mae_cents_joint_voiced": 59.15737800598144
+      },
+      "test": {
+        "score": 1.3080702424049377,
+        "legacy_loss": 0.3655936270952225,
+        "envelope_mae_db": 6.253636503219605,
+        "envelope_step_error_db": 5.865467882156372,
+        "ap_gate_error": 0.07837474755942822,
+        "uv_error": 0.10051398873329162,
+        "pitch_mae_cents_joint_voiced": 64.32013359069825
+      },
+      "reply_per_second": [
+        {
+          "start_seconds": 0,
+          "end_seconds": 1,
+          "envelope_mae_db": 10.2732515335083,
+          "envelope_step_error_db": 8.841264724731445,
+          "ap_gate_error": 0.09000000357627869,
+          "uv_error": 0.11500000208616257,
+          "pitch_mae_cents_joint_voiced": 79.8681411743164
+        },
+        {
+          "start_seconds": 1,
+          "end_seconds": 2,
+          "envelope_mae_db": 3.6756484508514404,
+          "envelope_step_error_db": 3.436225652694702,
+          "ap_gate_error": 0.03999999910593033,
+          "uv_error": 0.03500000014901161,
+          "pitch_mae_cents_joint_voiced": 45.609188079833984
+        },
+        {
+          "start_seconds": 2,
+          "end_seconds": 3,
+          "envelope_mae_db": 6.716991424560547,
+          "envelope_step_error_db": 6.4732346534729,
+          "ap_gate_error": 0.12999999523162842,
+          "uv_error": 0.20000000298023224,
+          "pitch_mae_cents_joint_voiced": 77.51863098144531
+        },
+        {
+          "start_seconds": 3,
+          "end_seconds": 4,
+          "envelope_mae_db": 3.8825106620788574,
+          "envelope_step_error_db": 3.747178077697754,
+          "ap_gate_error": 0.06499999761581421,
+          "uv_error": 0.10499999672174454,
+          "pitch_mae_cents_joint_voiced": 48.06086730957031
+        },
+        {
+          "start_seconds": 4,
+          "end_seconds": 5,
+          "envelope_mae_db": 4.0035929679870605,
+          "envelope_step_error_db": 3.6728644371032715,
+          "ap_gate_error": 0.019999999552965164,
+          "uv_error": 0.029999999329447746,
+          "pitch_mae_cents_joint_voiced": 58.35354232788086
+        },
+        {
+          "start_seconds": 5,
+          "end_seconds": 6,
+          "envelope_mae_db": 6.025379180908203,
+          "envelope_step_error_db": 4.645334720611572,
+          "ap_gate_error": 0.07500000298023224,
+          "uv_error": 0.1850000023841858,
+          "pitch_mae_cents_joint_voiced": 153.29974365234375
+        },
+        {
+          "start_seconds": 6,
+          "end_seconds": 7,
+          "envelope_mae_db": 9.095300674438477,
+          "envelope_step_error_db": 7.867483139038086,
+          "ap_gate_error": 0.05000000074505806,
+          "uv_error": 0.08500000089406967,
+          "pitch_mae_cents_joint_voiced": 63.67791748046875
+        },
+        {
+          "start_seconds": 7,
+          "end_seconds": 8,
+          "envelope_mae_db": 6.375570297241211,
+          "envelope_step_error_db": 5.307535648345947,
+          "ap_gate_error": 0.08500000089406967,
+          "uv_error": 0.06499999761581421,
+          "pitch_mae_cents_joint_voiced": 89.73967742919922
+        },
+        {
+          "start_seconds": 8,
+          "end_seconds": 9,
+          "envelope_mae_db": 6.6459641456604,
+          "envelope_step_error_db": 8.064455032348633,
+          "ap_gate_error": 0.10000000149011612,
+          "uv_error": 0.18000000715255737,
+          "pitch_mae_cents_joint_voiced": 56.182247161865234
+        },
+        {
+          "start_seconds": 9,
+          "end_seconds": 10,
+          "envelope_mae_db": 7.409772872924805,
+          "envelope_step_error_db": 7.38233757019043,
+          "ap_gate_error": 0.04500000178813934,
+          "uv_error": 0.08500000089406967,
+          "pitch_mae_cents_joint_voiced": 46.23580551147461
+        },
+        {
+          "start_seconds": 10,
+          "end_seconds": 11,
+          "envelope_mae_db": 4.455924034118652,
+          "envelope_step_error_db": 4.0676679611206055,
+          "ap_gate_error": 0.10999999940395355,
+          "uv_error": 0.10000000149011612,
+          "pitch_mae_cents_joint_voiced": 77.35812377929688
+        },
+        {
+          "start_seconds": 11,
+          "end_seconds": 12,
+          "envelope_mae_db": 4.287055492401123,
+          "envelope_step_error_db": 4.022263526916504,
+          "ap_gate_error": 0.07999999821186066,
+          "uv_error": 0.07000000029802322,
+          "pitch_mae_cents_joint_voiced": 79.76683807373047
+        },
+        {
+          "start_seconds": 12,
+          "end_seconds": 12.8,
+          "envelope_mae_db": 7.316806793212891,
+          "envelope_step_error_db": 5.609492301940918,
+          "ap_gate_error": 0.03726708143949509,
+          "uv_error": 0.02484472095966339,
+          "pitch_mae_cents_joint_voiced": 39.17277908325195
+        }
+      ]
+    }
+  },
+  "base_metrics": {
+    "validation": {
+      "score": 1.3280913591384889,
+      "legacy_loss": 0.36249116659164426,
+      "envelope_mae_db": 6.476663732528687,
+      "envelope_step_error_db": 5.91405291557312,
+      "ap_gate_error": 0.06691148020327091,
+      "uv_error": 0.09737533666193485,
+      "pitch_mae_cents_joint_voiced": 61.170349502563475
+    },
+    "test": {
+      "score": 1.3118818640708922,
+      "legacy_loss": 0.36551343500614164,
+      "envelope_mae_db": 6.268834066390991,
+      "envelope_step_error_db": 5.83543291091919,
+      "ap_gate_error": 0.07481300346553325,
+      "uv_error": 0.09286627769470215,
+      "pitch_mae_cents_joint_voiced": 68.71670875549316
+    }
+  },
+  "candidate_by_validation": "context",
+  "interpretation": "検証損失はcontextが対照版より約1.20%低いが、比較10文の損失は対照版より約0.31%高い。音程誤差は前回より約6.40%減る一方、包絡の時間変化・有声判定・非周期成分の条件は改善していない。全面的な改善や原因解消とはいえない。",
+  "local_result": "muse/.cache/irodori-world-context-results-20261113",
+  "trusted_input": "muse/.cache/irodori-world-context-input-20261113",
+  "comparison_directory": "muse/.cache/irodori-world-context-results-20261113/analysis/reply",
+  "audit_code_sha256": "c6d59b5d088caf643b323c03583bdc8685a50863a39f9c1b4b0fa5c5b053bfff",
+  "unit_tests_passed": 18,
+  "smoke_updates_per_condition": 3,
+  "reproduced_clips": 20,
+  "integrity_passed": true,
+  "previous_raw_reproduced": true,
+  "wav_validation": {
+    "previous_model": {
+      "sha256": "5fcb25083ac57868f77dda40416e8fe7720d64e1a010fa6d2d4372b8b57b0b1e",
+      "samples": 282240,
+      "rms": 0.09999998914662007,
+      "peak": 0.827850341796875,
+      "rails": 0
+    },
+    "control": {
+      "sha256": "a1e4a5fd161cabbe10b1c0e4534e973958caca9269bfcc35780c8be22475805f",
+      "samples": 282240,
+      "rms": 0.09999999101228468,
+      "peak": 0.8748779296875,
+      "rails": 0
+    },
+    "context": {
+      "sha256": "dd7d9f3a90365003f2e92f6c95f5e502f6f50c31833f17744869ebd4881728d8",
+      "samples": 282240,
+      "rms": 0.09999999877797569,
+      "peak": 0.85723876953125,
+      "rails": 0
+    },
+    "approved_world_compact": {
+      "sha256": "3bd909da60c80be8a36b4ea13e6784c7574cc893088e62e9aaaf7bfde8b63889",
+      "samples": 282240,
+      "rms": 0.10000000057439477,
+      "peak": 0.695068359375,
+      "rails": 0
+    }
+  },
+  "new_training_performed": true,
+  "training_device": "Mac CPU",
+  "colab_reconnected": false,
+  "quality_approved": false,
+  "firmware_changed": false,
+  "text_to_speech_ready": false,
+  "C152_real_time_verified": false,
+  "listening_feedback_pending": false,
+  "inference_uses_teacher_WORLD_parameters": false,
+  "inference_uses_teacher_codec_latent": true,
+  "next_action": "参照範囲拡大だけでは不十分。前回の音響損失改善版を保持し、初期出力を維持する容量拡張を同条件の対照版と比較する。",
+  "limitations": [
+    "参照範囲の変更は初期の予測も変える。同一の重み値で開始したが初期関数が同一ではない。",
+    "両条件の更新数・最適化方法・学習区間と損失は同じ。検証10文で保存点を選び、比較10文は重み更新や保存点選択に使わない。",
+    "比較文章は設計に利用済みで、最終評価には独立した新規文章が必要。",
+    "前後参照を広げるため先読みが65msから230msへ増える。分割時のバッファや重複計算も増え得る。実機性能は未検証。",
+    "入力は教師codec潜在表現。文章からの生成は未完成。",
+    "試聴は全文RMS一致でありLUFS一致ではない。一定ゲインのみ。本体の音量設計は別途必要。",
+    "1秒区間の分析には単語境界情報がなく、5〜6秒の計測をM5Stackの正確な位置と断定しない。"
+  ],
+  "user_listening_feedback": "微改善したようには聞こえるが、大きくは変わらない",
+  "followup": "world_capacity_run_status.json"
+}

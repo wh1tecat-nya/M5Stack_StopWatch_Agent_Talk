@@ -1,0 +1,15 @@
+CONFIG_MUSE_REALTIME_VOICE=y
+CONFIG_MUSE_CJK_FONT=y
+# CONFIG_MUSE_CJK_FONT_NOTO is not set
+CONFIG_MUSE_LATIN_FONT=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_sumi.csv"
+# CONFIG_HOMEHUB_OTA_ENABLED is not set
+# CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE is not set
+CONFIG_MUSE_VIDEO=n
+CONFIG_LV_USE_CANVAS=y
+# Keep CPU-only avatar/audio buffers in PSRAM so I2S can allocate internal DMA RAM.
+CONFIG_MUSE_STATIC_BUFFERS_IN_PSRAM=y
+# Preserve contiguous internal stacks for VM lookup and radio tasks after pairing.
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0
+# Dictionary mapping and other SDK mappings must share the IDF allocator.
+# CONFIG_SPI_FLASH_ROM_IMPL is not set

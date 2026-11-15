@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "date_jst": "2026-11-10",
+  "profile": "mf07",
+  "label": "B: Small-MF07 / 4 steps / Python FP32",
+  "user_report": "Bの声が一番良い。Bを基準にする。",
+  "baseline_sample": {
+    "id": "mf07-test_reply",
+    "wav_sha256": "14477312d3543f1b52b77b73f73b9fdd3ea5c00415b7965ef096ad0857de578c",
+    "seconds": 12.8
+  },
+  "profile_conditions": {
+    "id": "mf07",
+    "label": "B: Small-MF07 / 4 steps",
+    "repository": "Aratako/Irodori-TTS-v4.1-Small-MF",
+    "revision": "ccc78f5d480b6e51b69b2d5042a14c4da04fea6e",
+    "steps": 4,
+    "seed": 102,
+    "family": "meanflow",
+    "caption": "親しみやすく、明瞭でやわらかい声の若い成人女性。自然な会話の口調。ほのかに息を含んだ柔らかな響き。力みや張りの少ない、なめらかな声質。やや低めのトーンで、肩の力を抜いて話す。抑揚はごく控えめで、語尾を跳ね上げず、淡々と自然に話す。",
+    "listening_wav_sha256": "331a77dcc5e01efc1f62dd6c380c8f4a130ee5d8bc391099419b320080591569"
+  },
+  "reference": {
+    "file_sha256": "d318b3ce9d4dc47eab4ead3270834e9bfc4cd0a5b4059c456677c5bc113da643",
+    "payload_sha256": "db3744d24230003161f0912ca122d5f09df3fde03292bb58669b5716e345537a",
+    "shape": [
+      1125,
+      32
+    ],
+    "clip_frames": [
+      79,
+      118,
+      78,
+      33,
+      38,
+      29,
+      116,
+      103,
+      163,
+      114,
+      168,
+      86
+    ],
+    "source_seconds": 44.7511875,
+    "sample_rate": 48000
+  },
+  "source_result_archive_sha256": "3b472a330eca4c811d7a4c152f326f175d47a0b40fbd117ce793b3cce06e301b",
+  "training_profiles": [
+    "mf07"
+  ],
+  "comparison_only_profiles": [
+    "anime40",
+    "mf08"
+  ],
+  "preference_confirmed": true,
+  "spring_resonance_absent_confirmed": false,
+  "per_item_reading_and_cutoff_review": "not_reported",
+  "note": "Bを教師・品質比較の基準とし、A/Cは履歴と比較用に保持する。Bの全発話の無欠陥を確認したものではない。",
+  "quality_target_review_pending": false,
+  "quality_target_review_note": "基準B（MF07生成出力を22,050Hzへ変換）に問題なし、診断③で加工感が加わるとの回答。",
+  "accepted_quality_sample": {
+    "path": "muse/.cache/irodori-quality-reassessment-20261112/B_irodori_22k.wav",
+    "sha256": "5bcfe7d28d56dce7f014ab0f822864f3ef67e1024ceff282b1ee031b92452b89",
+    "scope": "Single reply sample; not all utterances or MCU performance."
+  }
+}

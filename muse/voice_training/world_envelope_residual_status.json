@@ -1,0 +1,215 @@
+{
+  "state": "single_component_feedback_received_interactions_pending",
+  "feedback": {
+    "user_feedback": "かなり自然になっている。2文目の「四つずつ」に若干のノイズ、「どうなるかな。」の「かな。」に強めの揺らぎ。3文目の「ありがとう」「けれど」に若干の揺らぎ。過去の手法より相当に違和感が少ない。",
+    "comparison_clarification": "Aで目立ち、Bではほぼ気にならない",
+    "scope": "提示した3文での聴取。任意文章や実機の合格とは扱わない。",
+    "issues": [
+      {
+        "sample": "mf07-expand_test_03",
+        "phrase": "四つずつ",
+        "issue": "若干のノイズっぽさ"
+      },
+      {
+        "sample": "mf07-expand_test_03",
+        "phrase": "かな。",
+        "issue": "強めの揺らぎ"
+      },
+      {
+        "sample": "mf07-expand_test_08",
+        "phrase": "ありがとう",
+        "issue": "若干の揺らぎ"
+      },
+      {
+        "sample": "mf07-expand_test_08",
+        "phrase": "けれど",
+        "issue": "若干の揺らぎ"
+      }
+    ],
+    "presentation_preference": "比較音声は文章ごとに分け、同じ文章の条件を並べる。連結しない。"
+  },
+  "baseline": "muse/.cache/irodori-world-envelope-baseline-20261113",
+  "result_directory": "muse/.cache/irodori-world-envelope-residual-20261113",
+  "checkpoint_sha256": "1fd7d966f410f7e29aee6e1ee2f8ad64bfd87cbd8847057be93931d2384616d1",
+  "weights_sha256": "75c2b800975f31b5204b926df5f1cef6eaabcd6ee5f684d8a66c9a19d194382b",
+  "diagnostic_only": true,
+  "quality_approved": false,
+  "firmware_changed": false,
+  "weights_changed": false,
+  "new_training_performed": false,
+  "colab_reconnected": false,
+  "raw_waveforms_reproduced": 3,
+  "diagnosis_tests_passed": 7,
+  "rows": [
+    {
+      "id": "mf07-expand_test_03",
+      "frames": 993,
+      "raw_waveform_reproduced": true,
+      "pitch": {
+        "joint_voiced_frames": 494,
+        "pitch_mae_cents_joint_voiced": 59.49121125178119,
+        "pitch_bias_cents_joint_voiced": 22.07449176069115,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.02631578947368421,
+        "predicted_step_mae_cents": 12.238975737212028,
+        "reference_step_mae_cents": 37.86180955133897,
+        "step_error_mae_cents": 36.42745877758743,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.094662638469285,
+        "predicted_uv_transitions": 24,
+        "reference_uv_transitions": 30,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 5
+      },
+      "ap_gate_mismatch_frames": 90,
+      "ap_gate_mismatch_teacher_voiced_frames": 64,
+      "envelope": {
+        "envelope_mae_db": 6.044116497039795,
+        "weighted_envelope_mae_db": 3.82928729057312,
+        "weighted_shape_mae_db": 3.160722255706787,
+        "weighted_level_mae_db": 1.8271071910858154,
+        "weighted_shape_step20ms_error_db": 3.9883854389190674
+      }
+    },
+    {
+      "id": "mf07-expand_test_04",
+      "frames": 969,
+      "raw_waveform_reproduced": true,
+      "pitch": {
+        "joint_voiced_frames": 527,
+        "pitch_mae_cents_joint_voiced": 62.22889942269267,
+        "pitch_bias_cents_joint_voiced": 8.536213557362611,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.03225806451612903,
+        "predicted_step_mae_cents": 11.149131635622112,
+        "reference_step_mae_cents": 31.277171194571398,
+        "step_error_mae_cents": 31.280852393940975,
+        "predicted_steps_over_100c": 0,
+        "uv_error_fraction": 0.07120743034055728,
+        "predicted_uv_transitions": 28,
+        "reference_uv_transitions": 34,
+        "predicted_runs_under_20ms": 1,
+        "reference_runs_under_20ms": 4
+      },
+      "ap_gate_mismatch_frames": 88,
+      "ap_gate_mismatch_teacher_voiced_frames": 56,
+      "envelope": {
+        "envelope_mae_db": 5.917472839355469,
+        "weighted_envelope_mae_db": 3.800248146057129,
+        "weighted_shape_mae_db": 3.1713778972625732,
+        "weighted_level_mae_db": 1.8168398141860962,
+        "weighted_shape_step20ms_error_db": 3.943321704864502
+      }
+    },
+    {
+      "id": "mf07-expand_test_08",
+      "frames": 2265,
+      "raw_waveform_reproduced": true,
+      "pitch": {
+        "joint_voiced_frames": 1093,
+        "pitch_mae_cents_joint_voiced": 61.13389947732084,
+        "pitch_bias_cents_joint_voiced": 7.880625601552392,
+        "pitch_error_over_200c_fraction_joint_voiced": 0.028362305580969808,
+        "predicted_step_mae_cents": 11.613788070965647,
+        "reference_step_mae_cents": 33.02393636350689,
+        "step_error_mae_cents": 33.65604195037972,
+        "predicted_steps_over_100c": 1,
+        "uv_error_fraction": 0.09845474613686535,
+        "predicted_uv_transitions": 54,
+        "reference_uv_transitions": 76,
+        "predicted_runs_under_20ms": 0,
+        "reference_runs_under_20ms": 11
+      },
+      "ap_gate_mismatch_frames": 160,
+      "ap_gate_mismatch_teacher_voiced_frames": 99,
+      "envelope": {
+        "envelope_mae_db": 6.581104278564453,
+        "weighted_envelope_mae_db": 3.891798496246338,
+        "weighted_shape_mae_db": 3.1409833431243896,
+        "weighted_level_mae_db": 1.9448368549346924,
+        "weighted_shape_step20ms_error_db": 3.9456779956817627
+      }
+    }
+  ],
+  "conditions": {
+    "model_all": {
+      "envelope": "predicted",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_envelope": {
+      "envelope": "teacher",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_aperiodicity": {
+      "envelope": "predicted",
+      "aperiodicity": "teacher",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_pitch_voicing": {
+      "envelope": "predicted",
+      "aperiodicity": "predicted",
+      "pitch_and_voicing": "teacher"
+    },
+    "teacher_all": {
+      "envelope": "teacher",
+      "aperiodicity": "teacher",
+      "pitch_and_voicing": "teacher"
+    }
+  },
+  "wav_validation": {
+    "model_all": {
+      "sha256": "3e3db1fa24c64fa6f6ba6f5ac0768d065165667d57b4473261a9c83d377456b8",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000005147609327,
+      "peak": 0.76715087890625,
+      "rails": 0
+    },
+    "teacher_envelope": {
+      "sha256": "679d9f3014b3451dcb660dc9bee0c5df4be6d1a67c1eafcc4c42a8d234cacaa7",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000002264430095,
+      "peak": 0.68048095703125,
+      "rails": 0
+    },
+    "teacher_aperiodicity": {
+      "sha256": "0bd2f009aff3aea5eb38230072e60fe2a6b7aa9b6abaeaba153e960a2ee3f86b",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999999071047586,
+      "peak": 0.766571044921875,
+      "rails": 0
+    },
+    "teacher_pitch_voicing": {
+      "sha256": "57bfe64577768ca37005911a792b659484d145314aa033d6b74ee43036e0d4d5",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000002104802933,
+      "peak": 0.79022216796875,
+      "rails": 0
+    },
+    "teacher_all": {
+      "sha256": "2b417e3d07bbf02de6cd801e244bcff65cba8ddd8d72c3eb0145fca2c4aad257",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999999099020986,
+      "peak": 0.682098388671875,
+      "rails": 0
+    }
+  },
+  "limitations": [
+    "数値は一文全体。音素と時刻の対応は未確定で、指摘された語の原因を示すものではありません。",
+    "成分を戻した音声は教師依存の診断で、学習モデルの改善版ではありません。",
+    "教師特徴にも分析誤差があり、成分間の依存もあるため単独原因を断定しません。",
+    "同じ平均RMSであり、LUFSの一致ではありません。",
+    "モデルの入力は教師codec潜在表現です。任意文章TTSや実機性能は未完成・未検証です。"
+  ],
+  "next_action": "固定モデルを保持し、包絡を教師へ戻した条件に非周期成分または音程・有声判定も戻して比較する。",
+  "listening_feedback": {
+    "user_feedback": "「かな」はあまり変わっていない気がする。全体的には①（包絡だけ教師へ戻す）が一番良くなっている。",
+    "interpretation": "包絡が引き続き全体の改善対象。「かな」の残差は単一成分の交換では明確な改善を確認できず、成分間の組み合わせを調べる。",
+    "scope": "短い2文目の主観比較。単独原因や他の文章への一般化は断定しない。"
+  },
+  "listening_feedback_pending": false
+}

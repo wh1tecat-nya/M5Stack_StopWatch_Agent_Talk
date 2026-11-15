@@ -1,0 +1,14 @@
+[
+  {"id":"greeting","split":"train","text":"おかえり。今日もお疲れさま。"},
+  {"id":"morning","split":"train","text":"おはよう。今日は、ひとつずつ進めていこうね。"},
+  {"id":"rest","split":"train","text":"少し疲れたね。お茶を飲んで、ゆっくり休もう。"},
+  {"id":"confirm","split":"train","text":"うん、ちゃんと聞こえているよ。もう一度、試してみよう。"},
+  {"id":"question","split":"train","text":"次は何をしようか。気になることがあれば、教えてね。"},
+  {"id":"numbers","split":"train","text":"午後三時に、五分だけ休憩しよう。電池は七十パーセント残っているよ。"},
+  {"id":"names","split":"train","text":"エムファイブスタックとミューズを、ストップウォッチから使っているよ。"},
+  {"id":"long_train","split":"train","text":"慌てなくても大丈夫。うまくいったところを確かめながら、続きを一緒に考えよう。今日はここまで進められたから、少し肩の力を抜いていいよ。"},
+  {"id":"validation_short","split":"validation","text":"こんにちは。今度こそ声が聞こえるかな。"},
+  {"id":"validation_long","split":"validation","text":"外は少し冷えてきたね。帰ったら温かいものを飲もう。明日の準備は、ひと息ついてからで大丈夫。"},
+  {"id":"test_reading","split":"test","text":"エムファイブスタックからの会話テストだよ。声の高さと、言葉の終わりを確かめているよ。"},
+  {"id":"test_reply","split":"test","text":"うん、聞こえるよ、しろねこ。エムファイブスタックからの会話テストだよ、って、ちゃんと届いてるよ。今日も声でお話できて、すみうれしいな。"}
+]

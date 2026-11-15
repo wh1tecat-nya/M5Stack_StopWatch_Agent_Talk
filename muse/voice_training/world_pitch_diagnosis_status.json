@@ -1,0 +1,110 @@
+{
+  "date_jst": "2026-11-13",
+  "state": "component_feedback_received_acoustic_candidate_prepared",
+  "user_feedback": "位相再計算とはまた別の方向性に音程の揺らぎが増えているように感じる。",
+  "feedback_location": "全体",
+  "checkpoint_sha256": "6ca55af5d58e0ee2d00572483afa946a8325dd4bbee0676f2a71fe836daa9eed",
+  "model_weights_changed": false,
+  "diagnosis": "world_pitch_diagnosis.py",
+  "runner": "probe_world_pitch.py",
+  "unit_tests_passed": 5,
+  "diagnostic_clips": 20,
+  "result_directory": "muse/.cache/irodori-world-pitch-probe-20261113",
+  "listening_directory": "muse/.cache/irodori-world-pitch-probe-20261113/listening",
+  "condition_sources": {
+    "model_all": {
+      "timbre": "predicted",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_pitch_model_timbre": {
+      "timbre": "predicted",
+      "pitch_and_voicing": "teacher"
+    },
+    "model_pitch_teacher_timbre": {
+      "timbre": "teacher",
+      "pitch_and_voicing": "predicted"
+    },
+    "teacher_all": {
+      "timbre": "teacher",
+      "pitch_and_voicing": "teacher"
+    }
+  },
+  "mean_per_utterance": {
+    "validation": {
+      "joint_voiced_frames": 597.9,
+      "pitch_mae_cents_joint_voiced": 70.26273591941336,
+      "pitch_bias_cents_joint_voiced": 0.563018829219879,
+      "pitch_error_over_200c_fraction_joint_voiced": 0.04397992317378465,
+      "predicted_step_mae_cents": 16.32707307860205,
+      "reference_step_mae_cents": 31.287402984508066,
+      "step_error_mae_cents": 33.48774632732598,
+      "predicted_steps_over_100c": 0.1,
+      "uv_error_fraction": 0.09835286051506491,
+      "predicted_uv_transitions": 30.6,
+      "reference_uv_transitions": 41.4,
+      "predicted_runs_under_20ms": 0.8,
+      "reference_runs_under_20ms": 3.9
+    },
+    "test": {
+      "joint_voiced_frames": 785.2,
+      "pitch_mae_cents_joint_voiced": 79.60029687693756,
+      "pitch_bias_cents_joint_voiced": 21.105794669731864,
+      "pitch_error_over_200c_fraction_joint_voiced": 0.04874864433271339,
+      "predicted_step_mae_cents": 16.396046031076356,
+      "reference_step_mae_cents": 30.51561966578795,
+      "step_error_mae_cents": 33.61193097064845,
+      "predicted_steps_over_100c": 0.0,
+      "uv_error_fraction": 0.09658308526797468,
+      "predicted_uv_transitions": 38.8,
+      "reference_uv_transitions": 51.4,
+      "predicted_runs_under_20ms": 1.2,
+      "reference_runs_under_20ms": 6.5
+    }
+  },
+  "wav_validation": {
+    "model_all": {
+      "sha256": "9a492975c367fae0858f2f81c154a3487f52fb100b97ebc9b3cd53caa0e19959",
+      "rms": 0.06782207071907674,
+      "rails": 0
+    },
+    "teacher_pitch_model_timbre": {
+      "sha256": "424f0f4cd5fe98b37f77f9a903704dc1de7404b1740b72eeeca3b6bbe1fbdb10",
+      "rms": 0.06782208458284929,
+      "rails": 0
+    },
+    "model_pitch_teacher_timbre": {
+      "sha256": "ce157b6a576798bd034d47134c45bdd9d354a2bf1dfe0290dd0dd787c35c4bd3",
+      "rms": 0.0678220347375208,
+      "rails": 0
+    },
+    "teacher_all": {
+      "sha256": "4bbf4ebc08c52156609ba42633a340d5874468f019881f69912a2661027aff90",
+      "rms": 0.06782207398934346,
+      "rails": 0
+    }
+  },
+  "baseline_prediction_unchanged": true,
+  "approved_resynthesis_reproduced": true,
+  "hypothesis": "短時間の急激なF0変化・有声無声の短い反転の増加だけでは聴感を説明できない。F0・有声判定の誤差と音色・非周期成分の誤差を分けて聴取する。",
+  "causality_confirmed": false,
+  "diagnostic_only": true,
+  "deployable_candidate": false,
+  "new_training_performed": false,
+  "firmware_changed": false,
+  "colab_gpu_restarted": false,
+  "quality_approved": false,
+  "limitations": [
+    "交換音声は教師成分を使う診断であり、そのまま実機へ採用できない。",
+    "音程側はF0と有声判定、音色側はスペクトル包絡と非周期成分をまとめて扱う。",
+    "成分間の依存があるため、単一原因を確定する実験ではない。",
+    "ピッチ誤差は両者が有声の区間、隣接差分は隣接2フレームとも両者が有声の区間に限る。",
+    "教師F0は推定値であり正解とは限らない。平均RMS一致でありLUFS一致ではない。"
+  ],
+  "next_action": "前モデル・音響損失修正版・暫定合格の教師再合成を同じ文章と平均RMSで聴取し、全体と後半の揺れ、不明瞭さを確認する。",
+  "component_feedback": {
+    "teacher_pitch_model_timbre": "1はかなり揺れが大きく、改善は全体的に揺れている。",
+    "model_pitch_teacher_timbre": "2は前半は揺れが減っているが、後半は揺れている。"
+  },
+  "interpretation": "音色を戻すと前半が改善するため、音色予測を優先する。後半の音程・有声判定も対象に残す。成分依存があり唯一の原因は未確定。",
+  "followup": "world_acoustic_run_status.json"
+}

@@ -1,0 +1,85 @@
+{
+  "date_jst": "2026-11-12",
+  "state": "compact_teacher_resynthesis_provisionally_accepted",
+  "quality_target": "accepted Irodori MF07 22050Hz reference B",
+  "previous_trial_feedback": "位相再計算: あまり変わらない。",
+  "previous_trial_accepted": false,
+  "implementation": "world_vocoder.py",
+  "probe": "probe_world.py",
+  "preparation": "prepare_world.py",
+  "auditor": "audit_world.py",
+  "pyworld_version": "0.3.5",
+  "setuptools_version": "80.9.0",
+  "frame_period_ms": 5.0,
+  "features": {
+    "spectral": 60,
+    "aperiodicity": 2,
+    "f0": 1,
+    "voicing": 1
+  },
+  "predictor": "world_model.py",
+  "predictor_trained": false,
+  "trial_uses_teacher_at_inference": true,
+  "listening_directory": "muse/.cache/irodori-world-probe-20261112",
+  "data_directory": "muse/.cache/irodori-world-features-20261112-final",
+  "data_audit": {
+    "integrity_passed": true,
+    "files": 92,
+    "splits": {
+      "train": 72,
+      "validation": 10,
+      "test": 10
+    },
+    "seconds": 536.6,
+    "dataset_sha256": "ab057135575f0295902ea566732de26229e9ccdd8f9e08f9607a6330fbe507e8",
+    "audit_code_sha256": "99e80382cc42aee9307fd4d8ccae844b6b4aeb529e5816d3e6145e3f54fb7233",
+    "new_training_performed": false,
+    "subjective_quality_approved": false
+  },
+  "wav_validation": {
+    "accepted_reference_B": {
+      "sha256": "5bcfe7d28d56dce7f014ab0f822864f3ef67e1024ceff282b1ee031b92452b89",
+      "samples": 282240,
+      "duration": 12.8,
+      "rms": 0.09999999045980683,
+      "peak": 0.7589111328125,
+      "pcm_rails": 0
+    },
+    "world_full_parameters": {
+      "sha256": "85bf506c8d43c856a8a10e83b7deb577ea4ca84ab7e6c19a7adbe521fe48693d",
+      "samples": 282240,
+      "duration": 12.8,
+      "rms": 0.100000032688437,
+      "peak": 0.690887451171875,
+      "pcm_rails": 0
+    },
+    "world_compact_parameters": {
+      "sha256": "3bd909da60c80be8a36b4ea13e6784c7574cc893088e62e9aaaf7bfde8b63889",
+      "samples": 282240,
+      "duration": 12.8,
+      "rms": 0.10000000057439477,
+      "peak": 0.695068359375,
+      "pcm_rails": 0
+    }
+  },
+  "unit_tests_passed": 7,
+  "quality_approved": true,
+  "new_training_performed": false,
+  "text_to_speech_ready": false,
+  "firmware_changed": false,
+  "C152_real_time_verified": false,
+  "colab_gpu_stopped": true,
+  "colab_save_conflict_resolved": true,
+  "next_action": "予測WORLD音声を暫定合格の教師パラメータ再合成と比較する。声の高さ・有声無声・音色の予測誤差を改善し、音質確認後に量子化・C152での速度とメモリーの検証へ進む。",
+  "decision_rule": "圧縮なしの段階で加工感が強ければ、この条件のWORLDを採用しない。圧縮なしだけ許容なら特徴圧縮を再検討。両方許容なら固定分割で予測器学習へ進む。",
+  "limitations": [
+    "F0はDIOとStoneMaskの推定値であり、声の高さの正解ラベルではありません。",
+    "解析・合成方式と圧縮の切り分け用です。改善済みの小型モデル出力ではありません。",
+    "CPU全文処理の実測は実機性能を保証しません。",
+    "基準Bの同一文章だけの比較です。音量は全文RMS一致でありLUFS一致ではありません。"
+  ],
+  "feedback_date_jst": "2026-11-13",
+  "acceptance_scope": "同じ返答文の教師パラメータ再合成を暫定合格。予測器、任意文章TTS、C152上の品質・性能の合格ではない。",
+  "user_feedback": "前回の位相再計算と比べ物にならないほど改善。若干の違和感はあるが、M5Stackでの生成・再生を考えると一旦許容。圧縮による差は殆ど感じられない。",
+  "learned_predictor_experiment": "world_training_status.json"
+}

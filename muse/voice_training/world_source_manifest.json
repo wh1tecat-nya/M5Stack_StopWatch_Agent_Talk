@@ -1,0 +1,97 @@
+{
+  "repository": "https://github.com/mmorise/World",
+  "revision": "8d79b88b7dd92e8a132996cf74080b2d6f881b98",
+  "pinned_by": "https://github.com/JeremyCCHsu/Python-Wrapper-for-World-Vocoder/tree/v0.3.5/lib/World",
+  "license": "BSD-3-Clause; retain LICENSE.txt in redistributions",
+  "files": [
+    {
+      "path": "src/codec.cpp",
+      "git_blob_sha": "7d56f5df37f556a9fecf1c4fbcf08eb9ccaee29b",
+      "sha256": "acbd6c22763d036ac338fee82c061e8526fdd2d68006fb4e73d4c58c9842b9e2",
+      "bytes": 13637
+    },
+    {
+      "path": "src/common.cpp",
+      "git_blob_sha": "c44ecaeab0a284ef188492368ff75fe0e2367c4f",
+      "sha256": "ef4a982d103bfd4c0efe6f1e6fa1192809e07ac39289f29951f3d95f1af8ca51",
+      "bytes": 9032
+    },
+    {
+      "path": "src/fft.cpp",
+      "git_blob_sha": "403db5f682cd258ae68859c8a9a97af664f3f4fa",
+      "sha256": "7a580cc02a0b040bf39de9a841f18b527a711093309ef408c08271abed6eec62",
+      "bytes": 60885
+    },
+    {
+      "path": "src/matlabfunctions.cpp",
+      "git_blob_sha": "02b0a49c61fde7d7199b28029eba1fb8ed792ab8",
+      "sha256": "250d4cdc31b64cb3bda3a0c988d3853a09e66dd85f15f167161948d938662a4c",
+      "bytes": 9648
+    },
+    {
+      "path": "src/synthesis.cpp",
+      "git_blob_sha": "fbf2e8721ea8e233ac0a04f85b88b14d5a9587c8",
+      "sha256": "9888973e28f2194a0eb9807e18e36680f3d912bef3ddf174dc640fedc4e08b4c",
+      "bytes": 16344
+    },
+    {
+      "path": "src/synthesisrealtime.cpp",
+      "git_blob_sha": "4a6c5dba0270c5410e89618a2591fde57f7c9881",
+      "sha256": "01403f641a1dce3de564335859b82815162bdee2ae7e25b5fa2288930539f5f2",
+      "bytes": 22676
+    },
+    {
+      "path": "src/world/codec.h",
+      "git_blob_sha": "7413cfa3be102a71818ad6c8f85b136fdd678272",
+      "sha256": "529736e308dd168ed60bd1dd76059ea8e04697de9d36c019dd9abccac22283a0",
+      "bytes": 3402
+    },
+    {
+      "path": "src/world/common.h",
+      "git_blob_sha": "34e2519fe6ad10722e5fed7952b758f2548408e7",
+      "sha256": "7a761e7d92a3dff74141f73a0bb36ea7af543f314638e4d53be21dfd3d6924d1",
+      "bytes": 4890
+    },
+    {
+      "path": "src/world/constantnumbers.h",
+      "git_blob_sha": "270d0d84f929f9cb87b7a157e58aef3238975d41",
+      "sha256": "ed3d3aec8d0e019db68b3845198bb2c87eedd1cd26a694a830bd57f4d26ba323",
+      "bytes": 1763
+    },
+    {
+      "path": "src/world/fft.h",
+      "git_blob_sha": "217dc956a53114edd1e231779887f394d9ddd1c3",
+      "sha256": "ac321b81dea5e8118933ecc66d2d9cbfb7721da52892a64d8a4f2e18a65829d6",
+      "bytes": 1275
+    },
+    {
+      "path": "src/world/macrodefinitions.h",
+      "git_blob_sha": "ced5b37afe470bfdedef05cd2361380b7ff13b48",
+      "sha256": "6d5417f864a4a4d95b470e72e3cb0114e8c96ba33cc189341e83a9f345e664f0",
+      "bytes": 4636
+    },
+    {
+      "path": "src/world/matlabfunctions.h",
+      "git_blob_sha": "ca5bb5dd1a543eab2eb142de01359b48398b03fd",
+      "sha256": "192a6be8cf749c147a7b5119b14ad50c5ddbddba9d6c810fbdf64f0dd7dc2af4",
+      "bytes": 6719
+    },
+    {
+      "path": "src/world/synthesis.h",
+      "git_blob_sha": "fbc5fd2bb21b7b62d0c191759b0b1f33b3245941",
+      "sha256": "3905ef8d0f77a4d3081a3ec11cc81f61e0c0b8db42ce37db1d6a76d5a5096e44",
+      "bytes": 1460
+    },
+    {
+      "path": "src/world/synthesisrealtime.h",
+      "git_blob_sha": "cbbb358c925e4a12730ebf84f8389b38c4e17b1e",
+      "sha256": "a0f21ec940cc6e692ef6e4cdce6e920c79ae3faff605bb5816ef19686dc60739",
+      "bytes": 5158
+    },
+    {
+      "path": "LICENSE.txt",
+      "sha256": "6921ef0a65a931509b4055075fd847d7257c4094609075dd0615e8e997215f7e",
+      "bytes": 2808
+    }
+  ]
+}

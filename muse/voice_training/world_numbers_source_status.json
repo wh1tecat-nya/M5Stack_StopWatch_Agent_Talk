@@ -1,0 +1,74 @@
+{
+  "sample_id": "mf07-expand_test_03",
+  "text": "十六個の箱を、四つずつ並べるとどうなるかな。",
+  "source_wav": "/Users/wh1tecat/Documents/Create/M5Stack_Stopwatch/muse/.cache/irodori-mf07-expanded-20261112/data/mf07-expand_test_03/teacher.wav",
+  "source_sha256": "67940777dcff1cd16b8ea4246e8630c88cea3110de7405ece6c54cbe9d74af3f",
+  "source_storage_gain": 0.9793339657456185,
+  "source_contains_generation_watermark": true,
+  "feature_dataset_sha256": "ab057135575f0295902ea566732de26229e9ccdd8f9e08f9607a6330fbe507e8",
+  "feature_arrays_reproduced": true,
+  "previous_reference_pcm_reproduced": true,
+  "resampling": "48000 to 22050 Hz, resample_poly(147, 320)",
+  "same_f0_for_both_resynthesis_conditions": true,
+  "waveforms": {
+    "irodori_original_22050": {
+      "sha256": "890089238080025647803fa521a5dd52044aa94afb8c8ae9f7012a4dc528ba4d",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999997898847046,
+      "peak": 0.725982666015625,
+      "rails": 0
+    },
+    "world_uncompressed": {
+      "sha256": "1b6e1c50ea2d215586274ddbe5077b5fafb74ab4683d4f1abe1bd0c2aac099e7",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.10000000854511418,
+      "peak": 0.678619384765625,
+      "rails": 0
+    },
+    "world_compact_reference": {
+      "sha256": "2b417e3d07bbf02de6cd801e244bcff65cba8ddd8d72c3eb0145fca2c4aad257",
+      "samples": 109368,
+      "seconds": 4.96,
+      "rms": 0.09999999099020986,
+      "peak": 0.682098388671875,
+      "rails": 0
+    }
+  },
+  "source_code_sha256": {
+    "probe_world_numbers_source.py": "1cf8e74d81ad372835ce381e01a0fc6f0aa5b557953b1815a7f37d9a57ebfafe",
+    "world_vocoder.py": "b05277eb2333b6dfb933e4f88c51313aaab6ac2a512783910e03ea2c6867c17e",
+    "compare_band_results.py": "7e5cb1b2cf547dd3bffba9620dd4e2932d277866375e6d4fe51d4ee4431d1302"
+  },
+  "diagnostic_only": true,
+  "new_training_performed": false,
+  "weights_changed": false,
+  "firmware_changed": false,
+  "quality_approved": false,
+  "limitations": [
+    "元音声は生成時に保存された教師音声です。人間の録音や品質合格済み音声ではありません。",
+    "元音声も他の2本と同じ22.05kHzへ変換しています。音声再合成や音程変更はしていません。",
+    "圧縮なしもWORLDの分析・再合成を通ります。Irodoriそのものの出力ではありません。",
+    "平均RMS一致でありLUFS一致ではありません。任意文章TTSと実機動作は未完成です。"
+  ],
+  "state": "source_resynthesis_feedback_received",
+  "feedback": {
+    "user_feedback": "全体の性質は②（包絡＋音程と有声判定を教師へ戻す）が近い。人間っぽい抑揚は①（包絡＋非周期成分を教師へ戻す）が良い。「かな」自体はどれも変わらず。",
+    "timbre_preference": "teacher_envelope_pitch",
+    "prosody_preference": "teacher_envelope_aperiodicity",
+    "interpretation": "声質の近さと自然な抑揚を別の評価軸として扱う。教師の音程への一致だけで自然さを判断しない。",
+    "reference_inclusion": "「どれも」に③基準Bを含むかは確認待ち。先の「Bはほぼ気にならない」との差を勝手に解釈しない。",
+    "scope": "提示した数の比較文。改善モデルや任意文章の品質を承認した回答ではない。"
+  },
+  "result_directory": "muse/.cache/irodori-world-numbers-source-20261113",
+  "reference_clarification_pending": false,
+  "listening_feedback_pending": false,
+  "next_action": "WORLDの音程推定と非周期成分の追加有声判定を切り分ける。現行学習モデルは固定する。",
+  "listening_feedback": {
+    "reference_clarification": "組み合わせ比較の③基準Bにも同程度の揺らぎがある。",
+    "source_comparison": "元音声①では気にならないが、圧縮なし再合成②でも若干気になる。吃音寄りの音で、声質の影響ではないかとの見解。",
+    "interpretation": "小型モデルの予測や特徴圧縮だけでは語尾の残差を説明できない。元音声から分析・再合成する段階にも違和感が出る。声質との相性は仮説であり、吃音や元音声の欠陥とは断定しない。",
+    "scope": "数の比較文の語尾。これまで確認した全体の大幅改善は維持する。"
+  }
+}

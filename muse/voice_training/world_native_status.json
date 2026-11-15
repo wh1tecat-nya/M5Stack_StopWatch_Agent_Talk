@@ -1,0 +1,55 @@
+{
+  "state": "native_predictor_host_verified_target_object_compiled",
+  "analysis_variant_feedback": {
+    "user_feedback": "大きくは変わらない。②は若干全体的に違うような気もするが分からない。③は変わりない気がする。「かな」はどれも大きく変わらず、③がごく僅かに改善したかもしれない。",
+    "interpretation": "明確で再現性のある聴感改善は確認できない。追加有声判定を外す案・Harvestへ変更する案とも現行方式には採用しない。",
+    "residual": "「かな」の再合成由来の引っかかりは未解決。声質と再合成方式の相性は仮説として残す。"
+  },
+  "result_directory": "muse/.cache/irodori-world-native-20261113",
+  "report_sha256": "074c7a59168a4ec2558d6c347e45ca41de04c6f22d563cbc3a0f2be6f296157d",
+  "checkpoint_sha256": "1fd7d966f410f7e29aee6e1ee2f8ad64bfd87cbd8847057be93931d2384616d1",
+  "weights_sha256": "75c2b800975f31b5204b926df5f1cef6eaabcd6ee5f684d8a66c9a19d194382b",
+  "test_utterances": 10,
+  "sanitized_boundary_cases": 5,
+  "native_invariant_checks_passed": true,
+  "maximum_normalized_difference": 4.76837158203125e-06,
+  "maximum_pitch_difference_cents": 0.0010034876473321416,
+  "voicing_labels_identical": true,
+  "native_full_and_chunked_predictions_exact": true,
+  "maximum_python_world_waveform_relative_l2": 0.0004046960544217618,
+  "maximum_python_world_rms_relative_difference": 8.330049079408042e-07,
+  "maximum_memory_bytes": {
+    "workspace_bytes": 230912,
+    "window_io_bytes": 62976,
+    "weight_bytes": 459304,
+    "model_state_bytes": 936
+  },
+  "mac_neural_chunked_real_time_factor_range": [
+    0.03977170289256199,
+    0.0416116244612069
+  ],
+  "esp32s3_object": {
+    "compiler": "xtensa-esp-elf-g++ (crosstool-NG esp-15.2.0_20251204) 15.2.0",
+    "flags": "-std=gnu++17 -O2 -ffp-contract=off -fno-exceptions -fno-rtti -fstack-usage -Wall -Wextra -Werror -c",
+    "file": "muse/.cache/irodori-world-native-20261113/world_envelope_esp32s3.o",
+    "sha256": "d8670f226971b16379c53de1cef37a18417f1966c996743a11c4a6d95f09b6f6",
+    "text_bytes": 3675,
+    "data_bytes": 0,
+    "bss_bytes": 0,
+    "linked_or_executed_on_device": false
+  },
+  "new_training_performed": false,
+  "weights_changed": false,
+  "firmware_changed": false,
+  "C152_real_time_verified": false,
+  "text_to_speech_ready": false,
+  "limitations": [
+    "C++へ移したのはニューラル予測器とパラメータ変換のみです。WORLD合成はPython版で照合しています。",
+    "入力は教師由来のcodec潜在表現です。文章からの発音時間・内部表現の生成は未完成です。",
+    "時間はMac上の3回中最速値で、C152の速度や消費電力を示しません。",
+    "メモリー数値は予測器の重み、作業領域、窓の入出力です。WORLD、文章処理、音声バッファ、OSは含みません。",
+    "音程がごくわずかに異なると再合成波形の位相も変わります。波形の完全一致や聴感合格を主張しません。",
+    "語尾「かな」に残る再合成の違和感は未解決です。"
+  ],
+  "next_action": "WORLD復号と波形合成を移植し、本体で速度とRAMを測定する。文章から発音時間・codec潜在表現を予測する学習部分も未完成。"
+}

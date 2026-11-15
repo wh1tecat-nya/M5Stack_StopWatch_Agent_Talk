@@ -1,0 +1,87 @@
+{
+  "date_jst": "2026-11-11",
+  "state": "listening_review_failed_high_frequency_quality",
+  "notebook_url": "https://colab.research.google.com/drive/1lK-vkX7tfUt7oSHJtVyglBFP917v9qze",
+  "notebook_cells": [
+    36,
+    37,
+    38,
+    39,
+    40,
+    41
+  ],
+  "baseline_selection": "muse/voice_training/baseline_selection.json",
+  "teacher_profile": "mf07",
+  "input_zip": "muse/.cache/irodori-mf07-reconstruction-input-20261110-v2.zip",
+  "input_bytes": 8683259,
+  "input_sha256": "1e7375d03dcf1998725e0199c2d6ff788c1d0975c617ae6e284e7e2a40813756",
+  "input_uploaded": true,
+  "colab_training_started": true,
+  "gpu_allocation": "NVIDIA L4",
+  "checks": {
+    "unit_tests_passed": 7,
+    "local_smoke_steps": 3,
+    "local_smoke_device": "cpu",
+    "local_smoke_exit_code": 0,
+    "notebook_cells_syntax": "passed",
+    "colab_preflight_exit_code": 0,
+    "result_archive_hash": "passed",
+    "result_integrity": "passed",
+    "checkpoint_cpu_reconstruction": "passed",
+    "max_cpu_cuda_abs_error": 4.693865776062012e-06
+  },
+  "local_smoke_directory": "muse/.cache/irodori-mf07-decoder-smoke-20261110",
+  "training_limits": {
+    "steps": 2000,
+    "loop_seconds": 900,
+    "process_timeout_seconds": 960
+  },
+  "perceptual_quality_verified": false,
+  "firmware_changed": false,
+  "next_action": "Controlled band-loss comparison complete; listening pending; frame-period-related periodicity remains",
+  "screenshot": "muse/.cache/irodori-reconstruction-completed-20261111.png",
+  "previous_state": "prepared_waiting_for_manual_t4_connection",
+  "input_remote_hash_verified": true,
+  "connection_attempts": [
+    {
+      "date_jst": "2026-11-11",
+      "gpu": "T4",
+      "result": "GPU backend unavailable; CPU fallback cancelled"
+    },
+    {
+      "date_jst": "2026-11-11",
+      "gpu": "L4",
+      "result": "Connected; setup complete; 2000 steps complete; result archived and verified; runtime deleted"
+    }
+  ],
+  "colab_training_finished": true,
+  "setup_return_code": 0,
+  "training_return_code": 0,
+  "final_runtime_state": "disconnected_and_deleted_after_verified_local_backup",
+  "last_logged_step": 2000,
+  "best_step": 1400,
+  "training_seconds": 101.63564346499993,
+  "initial_validation_loss": 0.1395019069314003,
+  "best_validation_loss": 0.07440047711133957,
+  "test_loss": 0.07741885259747505,
+  "best_checkpoint_sha256": "5f03f9fd3b95feac523e4e88756e25117be7484315e1060409f7146cf14dad9c",
+  "result_zip": "muse/.cache/irodori-mf07-reconstruction-20261111/sumi_mf07_reconstruction_results_20261111.zip",
+  "result_zip_bytes": 17864580,
+  "result_zip_sha256": "8d616f758148b6c74f4e4e2a05f876712f7c1bdc4918eabd11525263597cf097",
+  "audit": "muse/.cache/irodori-mf07-reconstruction-20261111/audit.json",
+  "input_files_verified": 37,
+  "listening_samples": [
+    "muse/.cache/irodori-mf07-reconstruction-20261111/outputs/mf07-test_reply/reference.wav",
+    "muse/.cache/irodori-mf07-reconstruction-20261111/outputs/mf07-test_reply/reconstruction.wav"
+  ],
+  "text_to_speech_ready": false,
+  "listening_review": {
+    "date_jst": "2026-11-11",
+    "user_report": "低音域（ハスキーより）の声は学習に乗っている感じがするが、高音域帯はかなりロボットやバネっぽい音に聞こえる。",
+    "clarification": "声の明るい成分・サ行と、音程が高くなる箇所の両方で目立つ",
+    "low_register_voice_similarity": "partly_preserved_subjective",
+    "high_frequency_artifacts": "strong_subjective",
+    "deployment_approved": false
+  },
+  "follow_up_comparison": "muse/voice_training/band_run_status.json"
+}

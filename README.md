@@ -1,5 +1,7 @@
 # すみ × M5Stack StopWatch
 
+Meta Muse向けの新しいファームウェアは[`muse/`](muse/README.md)にあります。既存のすみ画像・操作を維持し、Muse音声とsanoTTS-jpを設定で切り替えます。[移行仕様](docs/meta-muse-migration.md)。以下は従来のdots版の説明です。
+
 StopWatch C152から、設定した2.4 GHz Wi-Fiを経由して、既存のChatGPT dot「すみ」に音声メッセージを送る試作です。運用時はStopWatchと中継サーバーを使います。
 
 ## 操作
@@ -17,9 +19,9 @@ StopWatch C152から、設定した2.4 GHz Wi-Fiを経由して、既存のChatG
 
 Cloudflare Worker構成では、録音を `gpt-transcribe` で文字起こしし、すみの返答テキストをStopWatchに戻します。StopWatchはsanoTTS-jpで音声を生成します。[Workerの設定](cloudflare/README.md)
 
-既存のすみを維持したまま、ブラウザーのプラグインUIやPCの公式通話を経由する案は、[遅延経路の調査](docs/latency-routes.md)にまとめています。これらの代替経路は未実装・未検証です。
+既存のすみを維持したまま、ブラウザーのプラグインUIやPCの公式通話を経由する案は、[遅延経路の調査](docs/latency-routes.md)にまとめています。今回のdots画面ではプラグインUIが表示されなかったため、[Chrome拡張の会話ハブ](browser-extension/README.md)を追加しました。既存すみのチャットへの送信と本体からの読み上げを実機で確認し、1回の計測では左ボタンを離してから再生キュー投入まで29.056秒でした。使用中は中継ページとすみのタブを開き、PCを起動したままにします。
 
-返信待ちの揺れは、元のPNGを行ごとに変形して描画します。半ピクセル補間用の画像を起動時に約260KBのPSRAMへ用意し、下端は動かしません。GIF再生は未実装です。2026-11-07の実機計測では、Wi-Fi接続・TTS初期化後で約25fps、画面合成約14ms、転送約21msでした。左右端と連続描画中の画面データで、下端と上部UIが変わらないことを確認しました。
+返信待ちの揺れは、元のPNGを行ごとに変形して描画します。半ピクセル補間用の画像を起動時に約260KBのPSRAMへ用意し、下端は動かしません。画像は頭頂位置を保って18%拡大し、下側の丸い切り抜きを画面外へ送っています。GIF再生は未実装です。部分転送境界の黒線を避けるため、液晶への転送は全画面で行います。この版の実機計測は約19fps、画面合成約13ms、転送約32msでした。黒線が実画面でも消えたかは確認が必要です。
 
 このワークスペースでWorkerのURLと端末トークンを `cloudflare/.env.text-probe.json` に用意済みの場合は、`python3 tools/configure_stopwatch.py /path/to/root-ca.pem` でWi-Fi設定を対話入力できます。設定は端末ファームウェアをビルドする前に行います。
 

@@ -1,0 +1,77 @@
+{
+  "checkpoint_sha256": "6d1af2387f9a7173bef480fe06a682c15bbace62938905e7fbf990f27b791d0d",
+  "code_sha256": {
+    "probe_world_timbre.py": "ab4db1c1b343d4ca04d42ea61cb5aafdaf1d0bf66b80e10dc76ef2a797a4ed76",
+    "world_timbre_diagnosis.py": "207c1c34b003399b4d87aacfaaee6fe3d4ea566c51b526b6e1bd5c09ce67ff42"
+  },
+  "model_prediction_reproduced": true,
+  "approved_resynthesis_reproduced": true,
+  "conditions": {
+    "teacher_envelope": {
+      "spectral_envelope": "teacher",
+      "aperiodicity": "predicted",
+      "f0_and_voicing": "predicted"
+    },
+    "teacher_aperiodicity": {
+      "spectral_envelope": "predicted",
+      "aperiodicity": "teacher",
+      "f0_and_voicing": "predicted"
+    }
+  },
+  "wav_validation": {
+    "model_all": {
+      "sha256": "cd050d40b5d123af14f177091d321501945db342c648a31d705e5120c9b785b0",
+      "samples": 282240,
+      "rms": 0.09399687827726473,
+      "peak": 0.8057861328125,
+      "rails": 0
+    },
+    "teacher_envelope": {
+      "sha256": "70c050648291dc0609fecbdfd19fd1a5b00d208a24095a6329f6b9ff10f3cc31",
+      "samples": 282240,
+      "rms": 0.09399684068828268,
+      "peak": 0.89453125,
+      "rails": 0
+    },
+    "teacher_aperiodicity": {
+      "sha256": "f06dff25ae2ed667150692c3faa5864cc86a0d78328b5bc2a04f751599700cda",
+      "samples": 282240,
+      "rms": 0.09399686916398883,
+      "peak": 0.802001953125,
+      "rails": 0
+    },
+    "teacher_timbre": {
+      "sha256": "d9bc313426c94b3278ed0473d85b2e1f2b6015c12c2e224882328a7c74866519",
+      "samples": 282240,
+      "rms": 0.09399687752059546,
+      "peak": 0.899993896484375,
+      "rails": 0
+    },
+    "approved_world_compact": {
+      "sha256": "b5e97133641024803b96a401b90a8df1dd629771c9ceccefe510a2423a48b99b",
+      "samples": 282240,
+      "rms": 0.09399682995545383,
+      "peak": 0.653350830078125,
+      "rails": 0
+    }
+  },
+  "diagnostic_only": true,
+  "quality_approved": false,
+  "firmware_changed": false,
+  "limitations": [
+    "教師成分を使う診断であり、学習モデルの改善版ではない。",
+    "F0と有声判定は2本で同一。非周期成分の復号条件は別で、声の周期性へ影響する。",
+    "成分間の依存があるため、単独の原因を断定しない。",
+    "全文RMS一致でありLUFS一致ではない。"
+  ],
+  "date_jst": "2026-11-13",
+  "state": "envelope_priority_confirmed_by_listening",
+  "local_result": "muse/.cache/irodori-world-timbre-probe-20261113",
+  "listening_directory": "muse/.cache/irodori-world-timbre-probe-20261113/listening",
+  "unit_tests_passed": 2,
+  "preceding_capacity_experiment": "world_capacity_run_status.json",
+  "next_action": "基礎モデルと音程・非周期成分を完全に固定し、包絡だけを補正する学習を比較する。",
+  "user_listening_feedback": "圧倒的に1。2は揺れ感が有るが、1は「テストだよって ちゃんと届いてるよ」辺りにわずかに残る感じがある以外、ほぼ感じない。わずかに残る部分もかなり軽減されている。",
+  "interpretation": "この比較文では、音程・有声判定を同じにして包絡だけ教師へ戻すと揺れがほぼ消える。包絡予測を優先して改善する。単独原因や全文章への一般化までは断定しない。",
+  "followup": "world_envelope_run_status.json"
+}

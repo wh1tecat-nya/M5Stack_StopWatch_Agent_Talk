@@ -1,0 +1,145 @@
+{
+  "date_jst": "2026-11-13",
+  "state": "substantial_improvement_residual_wobble",
+  "user_feedback": {
+    "teacher_pitch_model_timbre": "1はかなり揺れが大きく、改善は全体的に揺れている。",
+    "model_pitch_teacher_timbre": "2は前半は揺れが減っているが、後半は揺れている。"
+  },
+  "interpretation": "音色側を優先して改善し、後半の音程・有声判定も対象とする。成分交換だけで唯一の原因は断定しない。",
+  "parameters": 78720,
+  "base_sha256": "6ca55af5d58e0ee2d00572483afa946a8325dd4bbee0676f2a71fe836daa9eed",
+  "input_zip_sha256": "5bf78f4e2d3afade28c2bd2709607d5ce20a3232e3a0cffce967908ccda2d25b",
+  "input_files_verified": 105,
+  "result_zip_sha256": "c1d74a984e9857f76446bef3f314b1dbf43f9ec813fe1a667736f26b1b99509f",
+  "result_zip_bytes": 9254609,
+  "local_result": "muse/.cache/irodori-world-acoustic-results-20261113",
+  "comparison_directory": "muse/.cache/irodori-world-acoustic-results-20261113/analysis/reply",
+  "conditions": {
+    "control": {
+      "updates": 5000,
+      "best_step": 5000,
+      "checkpoint_sha256": "3ccd59ba87c0de36b91515b900241de689f89f34f0c7a0fe8e9cbf314ed20c69",
+      "training_seconds": 30.00929407700005,
+      "validation": {
+        "score": 1.5484666347503662,
+        "legacy_loss": 0.3635373890399933,
+        "envelope_mae_db": 7.635583209991455,
+        "envelope_step_error_db": 6.064572715759278,
+        "ap_gate_error": 0.12541337236762046,
+        "uv_error": 0.10448218509554863,
+        "pitch_mae_cents_joint_voiced": 68.71029243469238
+      },
+      "test": {
+        "score": 1.5419293880462646,
+        "legacy_loss": 0.36756712198257446,
+        "envelope_mae_db": 7.498136138916015,
+        "envelope_step_error_db": 5.984092378616333,
+        "ap_gate_error": 0.13105133473873137,
+        "uv_error": 0.09861095547676087,
+        "pitch_mae_cents_joint_voiced": 74.61761169433593
+      }
+    },
+    "acoustic": {
+      "updates": 5000,
+      "best_step": 5000,
+      "checkpoint_sha256": "83c385a3c61cef00c76bf68acd97aa6b9dd4e311366e9e2050324191dacbcd67",
+      "training_seconds": 43.03004580200013,
+      "validation": {
+        "score": 1.3280913591384889,
+        "legacy_loss": 0.36249116659164426,
+        "envelope_mae_db": 6.476663732528687,
+        "envelope_step_error_db": 5.91405291557312,
+        "ap_gate_error": 0.06691148020327091,
+        "uv_error": 0.09737533666193485,
+        "pitch_mae_cents_joint_voiced": 61.170349502563475
+      },
+      "test": {
+        "score": 1.3118818640708922,
+        "legacy_loss": 0.36551343500614164,
+        "envelope_mae_db": 6.268834066390991,
+        "envelope_step_error_db": 5.83543291091919,
+        "ap_gate_error": 0.07481300346553325,
+        "uv_error": 0.09286627769470215,
+        "pitch_mae_cents_joint_voiced": 68.71670875549316
+      }
+    }
+  },
+  "initial": {
+    "validation": {
+      "score": 1.5717984437942505,
+      "legacy_loss": 0.3615428268909454,
+      "envelope_mae_db": 7.838282632827759,
+      "envelope_step_error_db": 6.076281213760376,
+      "ap_gate_error": 0.12688979879021645,
+      "uv_error": 0.09835286177694798,
+      "pitch_mae_cents_joint_voiced": 70.2627342224121
+    },
+    "test": {
+      "score": 1.5746032476425171,
+      "legacy_loss": 0.36586873829364774,
+      "envelope_mae_db": 7.725712823867798,
+      "envelope_step_error_db": 5.994099092483521,
+      "ap_gate_error": 0.128638406842947,
+      "uv_error": 0.09658308513462543,
+      "pitch_mae_cents_joint_voiced": 79.60029602050781
+    }
+  },
+  "candidate_by_validation": "acoustic",
+  "integrity_passed": true,
+  "unit_tests_local": 16,
+  "unit_tests_colab": 16,
+  "reproduced_clips": 20,
+  "wav_validation": {
+    "previous_model": {
+      "sha256": "742d2c860ffcec5d504672784eab1a1b4b7b192fc3f0338267cd815a7d49c1c5",
+      "samples": 282240,
+      "rms": 0.0656943365393128,
+      "peak": 0.87176513671875,
+      "rails": 0
+    },
+    "control": {
+      "sha256": "26f655bf5f1076c8e95b4911ad7aadab62c36c15fb1baadfa38e185f99766676",
+      "samples": 282240,
+      "rms": 0.06569431507715486,
+      "peak": 0.899993896484375,
+      "rails": 0
+    },
+    "acoustic": {
+      "sha256": "20a4389376b14bf0167592d7e901d4b402764f2a917871b75cf90beb563f9f92",
+      "samples": 282240,
+      "rms": 0.06569430900169133,
+      "peak": 0.543853759765625,
+      "rails": 0
+    },
+    "approved_world_compact": {
+      "sha256": "8a20d10fdac045b0c4e016ae81aa5d6cd2388c8fd85bf3dbe35dafcb852a7b0a",
+      "samples": 282240,
+      "rms": 0.06569433227975156,
+      "peak": 0.456634521484375,
+      "rails": 0
+    }
+  },
+  "previous_raw_reproduced": true,
+  "same_initial_weights_seed_batch_count_optimizer_and_frozen_statistics": true,
+  "new_training_performed": true,
+  "quality_approved": false,
+  "listening_feedback_pending": false,
+  "inference_uses_teacher_WORLD_parameters": false,
+  "inference_uses_teacher_codec_latent": true,
+  "firmware_changed": false,
+  "text_to_speech_ready": false,
+  "C152_real_time_verified": false,
+  "colab_gpu_stopped": true,
+  "colab_notebook_saved": true,
+  "gpu_stop_evidence": "ZIPをMacへ退避・サイズ/SHA/内容を照合し、CPUで予測を再現した後に接続解除。すべての変更を保存しました、再接続 L4 ハイメモリ、ランタイムに接続していません、を確認。",
+  "next_action": "残る揺れに対して、同じ重み数で前後の参照範囲を広げた条件を対照版と比較する。",
+  "limitations": [
+    "学習専用の損失を変更した比較であり、数値改善を聴感の合格としない。",
+    "入力は教師Irodori codec潜在表現。任意文章のフロントエンドは未完成。",
+    "学習72文・検証10文・比較10文を固定。比較文章は設計に利用済みで、新規独立文章での評価が必要。",
+    "試聴は一定ゲインによる全文RMS一致でありLUFS一致ではない。未調整の修正版返答ピークは1.175739で、本体用音量設計は未実装。",
+    "量子化、C152の速度・メモリー・ストリーミングは未検証。"
+  ],
+  "user_listening_feedback": "前モデルに比べると全体的に、大幅に改善。しかし、揺れはまだ全体的に有る。「M5Stack」の中盤辺りから顕著に現れ始める。",
+  "followup": "world_context_run_status.json"
+}

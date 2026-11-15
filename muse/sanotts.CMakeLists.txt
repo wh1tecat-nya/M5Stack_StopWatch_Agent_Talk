@@ -1,0 +1,13 @@
+file(GLOB_RECURSE core "${CMAKE_CURRENT_LIST_DIR}/SanoTTS-jp/src/core/*.c")
+idf_component_register(
+    SRCS ${core} "SanoTTS-jp/src/SanoTTS.cpp" "SanoTTS-jp/src/SanoTTSModelStub.c"
+    INCLUDE_DIRS "SanoTTS-jp/src" "SanoTTS-jp/src/core" "SanoTTS-jp-voice-tsukuyomi-v4/src"
+    PRIV_INCLUDE_DIRS "compat"
+    PRIV_REQUIRES esp_psram esp_partition esp_mm mbedtls esp_timer
+)
+if(NOT CMAKE_BUILD_EARLY_EXPANSION)
+    target_compile_definitions(${COMPONENT_LIB} PUBLIC SANOTTS_ARENA_HEAP=1
+        SANOTTS_DICT_SHA256="284eb31a4699598ffe885d1623a7215199ff610163c34ded959b0baa6cc7c925")
+    # Third-party generated C emits warnings with newer IDF compilers.
+    target_compile_options(${COMPONENT_LIB} PRIVATE -Wno-error)
+endif()

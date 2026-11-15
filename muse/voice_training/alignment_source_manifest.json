@@ -1,0 +1,36 @@
+{
+  "license": "Apache-2.0",
+  "files": [
+    {
+      "file": "model_quantized.onnx",
+      "url": "https://huggingface.co/mnaoizyyy/charsiu-js-models/resolve/d22b7e9b99d5fb2bed3e10fa8014917c2a4403dd/japanese-hubert-base-phoneme-ctc/model_quantized.onnx",
+      "bytes": 122970180,
+      "sha256": "ad29e980cb0f50044854bf25324506ace4ff0c48b98b4d194953028236c3ab6f"
+    },
+    {
+      "file": "config.json",
+      "url": "https://huggingface.co/prj-beatrice/japanese-hubert-base-phoneme-ctc/resolve/1ec4eb3c45b2a1cafb7c477d447df34ca03070f2/config.json",
+      "bytes": 1440,
+      "sha256": "1623b1662bab72550a0ff4fddae50ee78ed839b92f9c00bb02a8beb0f4a16df5"
+    },
+    {
+      "file": "preprocessor_config.json",
+      "url": "https://huggingface.co/prj-beatrice/japanese-hubert-base-phoneme-ctc/resolve/1ec4eb3c45b2a1cafb7c477d447df34ca03070f2/preprocessor_config.json",
+      "bytes": 258,
+      "sha256": "3698647300e38b0a83ccf0ee9b24834e2d262157410305d54a3a1f655ead3002"
+    },
+    {
+      "file": "vocab.json",
+      "url": "https://huggingface.co/prj-beatrice/japanese-hubert-base-phoneme-ctc/resolve/1ec4eb3c45b2a1cafb7c477d447df34ca03070f2/vocab.json",
+      "bytes": 538,
+      "sha256": "58ba6eb59cb2c953ef3f61d7d60ec64cc25cfbeb80e94fe7b4226899c50d7a07"
+    },
+    {
+      "file": "README.md",
+      "url": "https://huggingface.co/prj-beatrice/japanese-hubert-base-phoneme-ctc/resolve/1ec4eb3c45b2a1cafb7c477d447df34ca03070f2/README.md",
+      "bytes": 4340,
+      "sha256": "227365f2a3c09647ea3e83b950fd52038d8b931b18e65b2999aa575696adfd9c"
+    }
+  ],
+  "use": "local training alignment only, not deployed on C152"
+}

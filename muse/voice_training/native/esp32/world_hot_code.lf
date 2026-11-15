@@ -1,0 +1,14 @@
+[mapping:sumi_world_hot_code]
+archive: libsumi_world_bench.a
+entries:
+    world_fft_dsp (noflash_text)
+    common: GetMinimumPhaseSpectrum (noflash_text)
+
+[mapping:sumi_world_dsp_hot_code]
+archive: libesp-dsp.a
+entries:
+    dspm_mult_f32_aes3 (noflash_text)
+    dspm_mult_f32_ae32 (noflash_text)
+    dsps_fft2r_fc32_aes3_ (noflash_text)
+    dsps_bit_rev_lookup_fc32_aes3 (noflash_text)
+    dsps_fft2r_fc32_ansi: dsps_bit_rev2r_fc32 (noflash_text)

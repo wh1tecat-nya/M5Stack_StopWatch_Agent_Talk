@@ -1,0 +1,66 @@
+{
+  "date_jst": "2026-11-11",
+  "state": "reviewed_partial_improvement_not_accepted",
+  "purpose": "controlled_band_loss_comparison",
+  "teacher": "mf07",
+  "conditions": [
+    "baseline",
+    "bands"
+  ],
+  "initialization": "same official checkpoint and seed 20261110",
+  "steps_per_condition": 2000,
+  "seconds_per_training_loop": 240,
+  "input_zip": "muse/.cache/irodori-mf07-band-input-20261111-v1.zip",
+  "input_sha256": "2fea7d73378582ba766addb7a237fcdac3b33e043848a9a12f8fcffd72ea7edb",
+  "local_checks": {
+    "tests": 12,
+    "smoke_steps": 3,
+    "smoke_exit_code": 0
+  },
+  "notebook_cells": [
+    42,
+    43,
+    44,
+    45,
+    46,
+    47
+  ],
+  "perceptual_quality_verified": false,
+  "firmware_changed": false,
+  "gpu": "NVIDIA L4",
+  "input_remote_files_verified": 40,
+  "diagnostic_report": "muse/.cache/irodori-mf07-reconstruction-20261111/band_pitch_diagnosis_v2.json",
+  "hypothesis": "Decoder frame-period-related periodicity; not a proven perceptual cause",
+  "training_exit_code": 0,
+  "steps_completed_per_condition": 2000,
+  "conditions_summary": {
+    "baseline": {
+      "best_step": 1400,
+      "validation_loss": 0.07454520836472511
+    },
+    "bands": {
+      "best_step": 1200,
+      "validation_loss": 0.07536910474300385
+    }
+  },
+  "training_seconds": 260.583457458,
+  "result_zip": "muse/.cache/irodori-mf07-band-20261111/sumi_mf07_band_results_20261111.zip",
+  "result_zip_bytes": 29565438,
+  "result_zip_sha256": "80d37d0031a64db9a86718bf0aeefcb25349e0456a62f420bf821b84ca198364",
+  "integrity_passed": true,
+  "input_files_verified_per_condition": 40,
+  "max_cpu_cuda_error": 6.51925802230835e-06,
+  "preview_wavs_verified": 12,
+  "comparison_report": "muse/.cache/irodori-mf07-band-20261111/analysis-v2/comparison.json",
+  "listening_directory": "muse/.cache/irodori-mf07-band-20261111/analysis-v2/listening_endpoint/mf07-test_reply",
+  "runtime_state": "disconnected_and_deleted_after_verified_local_backup",
+  "screenshot": "muse/.cache/irodori-band-completed-20261111.png",
+  "adoption": "not_adopted_insufficient_high_and_low_register_quality",
+  "next_action": "Evaluate phase/magnitude diagnostic swaps; develop continuous-phase excitation, F0 prediction, and a small learned filter while preserving MF07 reference.",
+  "listening_deferred_reason": "Resolved: badge firmware visual checks completed on 2026-11-12.",
+  "listening_resumed_on": "2026-11-12",
+  "badge_firmware_user_confirmation": "Clock, image scale/toggle, button-only wake, and initial wearable ON confirmed.",
+  "listening_reviewed_on": "2026-11-12",
+  "user_report": "減りはしたが、まだ相当に違和感は残る。高音・低音共に、さらなる改善が必要。",
+  "listening_review_complete": true
+}

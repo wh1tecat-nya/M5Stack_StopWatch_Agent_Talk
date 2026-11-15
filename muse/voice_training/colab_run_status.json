@@ -1,0 +1,84 @@
+{
+  "date_jst": "2026-11-10",
+  "notebook_url": "https://colab.research.google.com/drive/1lK-vkX7tfUt7oSHJtVyglBFP917v9qze",
+  "prepared_cells": [
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35
+  ],
+  "input_archive": "muse/.cache/irodori-training-input-20261110-v2.zip",
+  "input_sha256": "fa9ede866bf78f75772d9764026b7fee6b5ddb15f72fb38f323f47e4f45a1dc0",
+  "input_uploaded": true,
+  "attempts": [
+    {
+      "gpu": "T4",
+      "result": "Colab reported GPU backend unavailable; CPU fallback cancelled"
+    },
+    {
+      "gpu": "L4",
+      "result": "Allocation did not complete; no active session observed"
+    },
+    {
+      "gpu": "A100",
+      "result": "Allocation did not complete after page reload; no active session observed"
+    },
+    {
+      "gpu": "T4",
+      "result": "User connected manually; setup and 36-sample generation completed; local archive verified and runtime deleted"
+    }
+  ],
+  "final_runtime_state": "disconnected_and_deleted_after_verified_local_backup",
+  "generated_samples": 36,
+  "training_started": true,
+  "firmware_changed": false,
+  "local_checks": {
+    "plan_and_reference": "passed",
+    "unit_tests_passed": 5,
+    "python_json_parse": "passed",
+    "git_diff_check": "passed",
+    "teacher_output_integrity": "passed_all_36",
+    "runtime_source_matches_local": true
+  },
+  "next_action": "MF07 reconstruction completed on 2026-11-11; compare teacher/reconstruction audio. See reconstruction_run_status.json.",
+  "screenshot": "muse/.cache/irodori-colab-completed-20261110.png",
+  "previous_checkpoint": {
+    "state": "blocked_before_runtime_start",
+    "final_active_sessions": 0,
+    "displayed_available_units_before": 372.01,
+    "displayed_available_units_after": 372.01
+  },
+  "state": "teacher_pilot_complete_mf07_selected",
+  "gpu": "Tesla T4, 15360 MiB",
+  "runtime": {
+    "python": "3.10.22",
+    "torch": "2.10.0+cu128",
+    "precision": "fp32"
+  },
+  "generated_seconds": 257.6,
+  "generation_return_code": 0,
+  "result_archive": "muse/.cache/irodori-pilot-20261110/sumi_voice_pilot_results_20261110.zip",
+  "result_archive_bytes": 19079289,
+  "result_archive_sha256": "3b472a330eca4c811d7a4c152f326f175d47a0b40fbd117ce793b3cce06e301b",
+  "audit": "muse/.cache/irodori-pilot-20261110/audit.json",
+  "perceptual_quality_verified": false,
+  "full_scale_samples": 19,
+  "samples_with_full_scale": 12,
+  "listening_samples": [
+    "anime40-test_reply",
+    "mf07-test_reply",
+    "mf08-test_reply"
+  ],
+  "input_patch": {
+    "reason": "Unwrap decorated codec and synthesis methods to capture implementation frame locals",
+    "applied_before_generation": true,
+    "pilot_sha256": "731b58fbbf56be53c6cad6d13009454c107ceacecf11a0e6af67aba5dc80149c",
+    "test_pilot_sha256": "76f2665ae1165a52b91cdc34498c120cb3afcb926d8f46ec06e9e152d870dad1",
+    "note": "v2 input ZIP retains pre-patch source; notebook cell 33 applies verified patch, result ZIP stores both versions"
+  },
+  "baseline_selection": "muse/voice_training/baseline_selection.json",
+  "reconstruction_status": "muse/voice_training/reconstruction_run_status.json"
+}

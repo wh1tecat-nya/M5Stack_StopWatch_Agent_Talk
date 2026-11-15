@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "decision_date_jst": "2026-11-10",
+  "user_decision": "A、B、Cどれも同じ参照音声なので、全て含めて進める",
+  "compute": "existing_colab",
+  "quality_goal": "共通のすみ参照音声を維持し、バネのような響きを減らす",
+  "quality_goal_verified": false,
+  "reference": {
+    "file_sha256": "d318b3ce9d4dc47eab4ead3270834e9bfc4cd0a5b4059c456677c5bc113da643",
+    "payload_sha256": "db3744d24230003161f0912ca122d5f09df3fde03292bb58669b5716e345537a",
+    "shape": [1125, 32],
+    "clip_frames": [79,118,78,33,38,29,116,103,163,114,168,86],
+    "source_seconds": 44.7511875,
+    "sample_rate": 48000
+  },
+  "source": {
+    "repository": "https://github.com/Aratako/Irodori-TTS.git",
+    "revision": "89f9d8fbd4d51ea019867ee1197725ede1df13c5",
+    "lock_sha256": "8175adbb9ad7ae77d1f048344343a63876e57c333b659314bcc054230b5b3e6c",
+    "python": "3.10.22",
+    "uv": "0.12.22",
+    "torch": "2.10.0+cu128"
+  },
+  "codec": {
+    "repository": "Aratako/Semantic-DACVAE-Japanese-32dim",
+    "revision": "47376ee24834d7a05a48ebabfe3cde29b3c5e214",
+    "filename": "weights.pth"
+  },
+  "watermark": {
+    "repository": "sony/silentcipher",
+    "revision": "a1c4d021905e0dc5b24be5f68db5fc4dba410ee1"
+  },
+  "profiles": [
+    {
+      "id": "anime40", "label": "A: Anime FP32 / 40 steps",
+      "repository": "phasefield-audio/Irodori-TTS-v4.1-Anime",
+      "revision": "6b259f5baa5e236b3d14cbd1f8555ca87d92b530",
+      "steps": 40, "seed": 102, "family": "rf",
+      "caption": "親しみやすく、明瞭でやわらかい声の若い成人女性。自然な会話の口調。ほのかに息を含んだ柔らかな響き。力みや張りの少ない、なめらかな声質。やや低めのトーンで、肩の力を抜いて話す。抑揚はごく控えめで、語尾を跳ね上げず、淡々と自然に話す。",
+      "listening_wav_sha256": "e670639d11ea77c6be229e4f18bfdc0d89c81ff21d93c05199d24703f7269958"
+    },
+    {
+      "id": "mf07", "label": "B: Small-MF07 / 4 steps",
+      "repository": "Aratako/Irodori-TTS-v4.1-Small-MF",
+      "revision": "ccc78f5d480b6e51b69b2d5042a14c4da04fea6e",
+      "steps": 4, "seed": 102, "family": "meanflow",
+      "caption": "親しみやすく、明瞭でやわらかい声の若い成人女性。自然な会話の口調。ほのかに息を含んだ柔らかな響き。力みや張りの少ない、なめらかな声質。やや低めのトーンで、肩の力を抜いて話す。抑揚はごく控えめで、語尾を跳ね上げず、淡々と自然に話す。",
+      "listening_wav_sha256": "331a77dcc5e01efc1f62dd6c380c8f4a130ee5d8bc391099419b320080591569"
+    },
+    {
+      "id": "mf08", "label": "C: Small-MF08 / 4 steps",
+      "repository": "Aratako/Irodori-TTS-v4.1-Small-MF",
+      "revision": "ccc78f5d480b6e51b69b2d5042a14c4da04fea6e",
+      "steps": 4, "seed": 102, "family": "meanflow",
+      "caption": "親しみやすく、明瞭でやわらかい声の若い成人女性。自然な会話の口調。ほのかに息を含んだ柔らかな響き。力みや張りの少ない、なめらかな声質。高域の明るい響きを残し、肩の力を抜いて話す。抑揚はごく控えめで、語尾を跳ね上げず、淡々と自然に話す。",
+      "listening_wav_sha256": "828e73071bd51acbabfd383a459870f074b5e4701db385fc992a6a4cd94fad36"
+    }
+  ],
+  "pilot": {
+    "precision": "fp32",
+    "max_seconds_per_utterance": 25,
+    "model_wall_seconds": 900,
+    "note": "B/Cの過去試聴はGGUF F16/native実装。この試行は同じ上流重み・参照・captionをPython FP32で実行するため、波形一致や聴感の同一性は未保証。",
+    "split_policy": "文章ID単位で分離し、同一文章の別方式を学習と評価に跨がせない",
+    "profile_sampling": "各方式を同数採用し、方式名・個別の音声・潜在表現を保持する。波形や潜在表現を平均しない。"
+  }
+}

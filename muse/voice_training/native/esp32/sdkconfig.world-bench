@@ -1,0 +1,5 @@
+# The diagnostic carries both the existing SanoTTS and the new WORLD model.
+# Keep read-only tables in flash so both models do not consume the PSRAM heap.
+# CONFIG_SPIRAM_XIP_FROM_PSRAM is not set
+# CONFIG_SPIRAM_RODATA is not set
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y

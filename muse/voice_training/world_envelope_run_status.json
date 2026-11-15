@@ -1,0 +1,201 @@
+{
+  "date_jst": "2026-11-13",
+  "state": "major_subjective_improvement_reference_baseline",
+  "user_feedback": "包絡だけを教師へ戻した①で圧倒的に改善。「テストだよって ちゃんと届いてるよ」付近にわずかに残る以外、揺れはほぼ感じない。非周期成分だけ戻した②には揺れがある。",
+  "interpretation": "今回の比較文では包絡予測が主要な改善対象。音程・有声判定が同じでも大幅に改善する。唯一の原因や全文章への一般化は断定しない。",
+  "base_sha256": "6d1af2387f9a7173bef480fe06a682c15bbace62938905e7fbf990f27b791d0d",
+  "parameters": 114636,
+  "trainable_parameters": 35916,
+  "frozen_base_parameters": 78720,
+  "inference_receptive_frames": 99,
+  "inference_receptive_ms": 495,
+  "future_context_ms": 245,
+  "conditions": {
+    "control": {
+      "updates": 5000,
+      "best_step": 5000,
+      "training_seconds": 41.5232948330231,
+      "checkpoint_sha256": "af8d44039e5448acf7b60604e0f83f8c34749fb9cf47590791d74ec8f76ca489",
+      "train": {
+        "score": 0.9671838813357883,
+        "envelope_mae_db": 5.89694384071562,
+        "weighted_envelope_mae_db": 3.815784047047297,
+        "weighted_shape_mae_db": 3.1112877329190574,
+        "weighted_level_mae_db": 1.834259534875552,
+        "weighted_shape_step20ms_error_db": 3.933421277337604
+      },
+      "validation": {
+        "score": 1.032755297422409,
+        "envelope_mae_db": 6.274861669540405,
+        "weighted_envelope_mae_db": 4.12101137638092,
+        "weighted_shape_mae_db": 3.2232192277908327,
+        "weighted_level_mae_db": 2.190884304046631,
+        "weighted_shape_step20ms_error_db": 4.001155495643616
+      },
+      "test": {
+        "score": 1.0206206142902374,
+        "envelope_mae_db": 6.153361177444458,
+        "weighted_envelope_mae_db": 4.048576831817627,
+        "weighted_shape_mae_db": 3.217854452133179,
+        "weighted_level_mae_db": 2.118056356906891,
+        "weighted_shape_step20ms_error_db": 4.005075836181641
+      }
+    },
+    "focused": {
+      "updates": 5000,
+      "best_step": 4800,
+      "training_seconds": 46.492014041985385,
+      "checkpoint_sha256": "1fd7d966f410f7e29aee6e1ee2f8ad64bfd87cbd8847057be93931d2384616d1",
+      "train": {
+        "score": 0.9370505073004298,
+        "envelope_mae_db": 5.98619740539127,
+        "weighted_envelope_mae_db": 3.697601556777954,
+        "weighted_shape_mae_db": 3.041535599364175,
+        "weighted_level_mae_db": 1.7548004157013364,
+        "weighted_shape_step20ms_error_db": 3.865005122290717
+      },
+      "validation": {
+        "score": 0.9970133125782012,
+        "envelope_mae_db": 6.359521198272705,
+        "weighted_envelope_mae_db": 3.976799750328064,
+        "weighted_shape_mae_db": 3.14313006401062,
+        "weighted_level_mae_db": 2.070393204689026,
+        "weighted_shape_step20ms_error_db": 3.939423847198486
+      },
+      "test": {
+        "score": 0.9883871138095855,
+        "envelope_mae_db": 6.19466495513916,
+        "weighted_envelope_mae_db": 3.9120176076889037,
+        "weighted_shape_mae_db": 3.1503129243850707,
+        "weighted_level_mae_db": 2.011146676540375,
+        "weighted_shape_step20ms_error_db": 3.941846418380737
+      }
+    }
+  },
+  "base_metrics": {
+    "train": {
+      "score": 1.0125656889544592,
+      "envelope_mae_db": 6.041819969813029,
+      "weighted_envelope_mae_db": 3.9689004355006747,
+      "weighted_shape_mae_db": 3.215893159310023,
+      "weighted_level_mae_db": 1.9388696120844946,
+      "weighted_shape_step20ms_error_db": 4.062118960751428
+    },
+    "validation": {
+      "score": 1.0750910758972168,
+      "envelope_mae_db": 6.3979442596435545,
+      "weighted_envelope_mae_db": 4.2607816696167,
+      "weighted_shape_mae_db": 3.319820213317871,
+      "weighted_level_mae_db": 2.277090811729431,
+      "weighted_shape_step20ms_error_db": 4.1263401985168455
+    },
+    "test": {
+      "score": 1.0592047095298767,
+      "envelope_mae_db": 6.253636503219605,
+      "weighted_envelope_mae_db": 4.16814239025116,
+      "weighted_shape_mae_db": 3.309803771972656,
+      "weighted_level_mae_db": 2.1820540189743043,
+      "weighted_shape_step20ms_error_db": 4.119485926628113
+    }
+  },
+  "frame_weights": "一文全体の復号スペクトルから求めたエネルギー95%点より35dB下を中心に、4dB幅のsigmoidで0.1〜1。教師有声フレームは1。推論では不要。",
+  "loss": "focused: weighted envelope + 0.5 centered shape + 0.2 frequency slope + 0.2 shape change at 20/40ms + 0.02 coefficient regularizer",
+  "candidate_by_validation": "focused",
+  "input_files_verified": 112,
+  "integrity_passed": true,
+  "base_model_unchanged": true,
+  "non_envelope_parameters_unchanged": true,
+  "reproduced_clips": 20,
+  "unit_tests_passed": 22,
+  "smoke_updates_per_condition": 3,
+  "wav_validation": {
+    "previous_model": {
+      "sha256": "2c0628df6292ef1c4eba7f71d17cc93bbc504a5b5fafb912d1e3b7711158b59a",
+      "samples": 282240,
+      "rms": 0.094571473009134,
+      "peak": 0.810699462890625,
+      "rails": 0
+    },
+    "control": {
+      "sha256": "8099e67406f0f6f042c5e70e53bad42cd5037875ecc9e8bc3e90af73cbfba027",
+      "samples": 282240,
+      "rms": 0.09457143563618248,
+      "peak": 0.81988525390625,
+      "rails": 0
+    },
+    "focused": {
+      "sha256": "41475b44094f9beca0b71b5318807d7bb44698cc94c79d77a3bcd0036cc3bbc9",
+      "samples": 282240,
+      "rms": 0.09457148636807874,
+      "peak": 0.800689697265625,
+      "rails": 0
+    },
+    "diagnostic_teacher_envelope": {
+      "sha256": "41319b4e87ac5ef1d616d25903de320abb63ab98357dbdfd5a182a5e596503e1",
+      "samples": 282240,
+      "rms": 0.09457149719146409,
+      "peak": 0.899993896484375,
+      "rails": 0
+    }
+  },
+  "local_result": "muse/.cache/irodori-world-envelope-results-20261113",
+  "trusted_input": "muse/.cache/irodori-world-envelope-input-20261113",
+  "comparison_directory": "muse/.cache/irodori-world-envelope-results-20261113/analysis/reply",
+  "audit_code_sha256": "44c41798320058fde5c5a9f4be7af511e4e72b6bf67b57a8e5f5d50775b90dee",
+  "new_training_performed": true,
+  "training_device": "Mac CPU",
+  "training_finished": true,
+  "colab_reconnected": false,
+  "quality_approved": false,
+  "listening_feedback_pending": false,
+  "firmware_changed": false,
+  "text_to_speech_ready": false,
+  "C152_real_time_verified": false,
+  "inference_uses_teacher_WORLD_parameters": false,
+  "inference_uses_teacher_codec_latent": true,
+  "next_action": "固定した補正版を維持し、2文目で残るノイズ・揺らぎの成分診断を行う。",
+  "limitations": [
+    "音程・有声判定・非周期成分を固定した比較で、候補はそれらを改善しない。",
+    "包絡の誤差削減は聴感の合格を意味しない。教師包絡を使う診断音声は改善モデルではない。",
+    "重み数と先読みが増える。C152の速度・RAM・量子化・ストリーミングは未検証。",
+    "比較10文は設計に使用済み。独立した最終評価には新規文章が必要。",
+    "教師由来の重みで小さい音を下げるため、弱い子音や語尾を損なわないか聴取が必要。",
+    "平均RMS一致でありLUFS一致ではない。未調整の返答ピークは1.176757で、本体の音量設計は別途必要。",
+    "入力は教師codec潜在表現。任意文章TTSは未完成。"
+  ],
+  "user_listening_feedback": "めちゃくちゃ減った。診断③に比べ「聞こえるよしろねこ」の透明感・クリアさが若干弱く、「ちゃんと届いてるよ」が僅かに揺れる気がする。ただ、もうかなり違和感は消えているレベル。",
+  "subjective_scope": "返答文と別の3文で大幅改善を確認。局所的な残差あり。任意文章や実機の合格へ拡大しない。",
+  "residual_issues": [
+    "「聞こえるよ、しろねこ」の透明感・クリアさが診断参照より若干弱い。",
+    "「ちゃんと届いてるよ」にわずかな揺れの可能性がある。"
+  ],
+  "reference_baseline": "muse/.cache/irodori-world-envelope-baseline-20261113",
+  "cross_sentence_feedback": {
+    "user_feedback": "かなり自然になっている。2文目の「四つずつ」に若干のノイズ、「どうなるかな。」の「かな。」に強めの揺らぎ。3文目の「ありがとう」「けれど」に若干の揺らぎ。過去の手法より相当に違和感が少ない。",
+    "comparison_clarification": "Aで目立ち、Bではほぼ気にならない",
+    "scope": "提示した3文での聴取。任意文章や実機の合格とは扱わない。",
+    "issues": [
+      {
+        "sample": "mf07-expand_test_03",
+        "phrase": "四つずつ",
+        "issue": "若干のノイズっぽさ"
+      },
+      {
+        "sample": "mf07-expand_test_03",
+        "phrase": "かな。",
+        "issue": "強めの揺らぎ"
+      },
+      {
+        "sample": "mf07-expand_test_08",
+        "phrase": "ありがとう",
+        "issue": "若干の揺らぎ"
+      },
+      {
+        "sample": "mf07-expand_test_08",
+        "phrase": "けれど",
+        "issue": "若干の揺らぎ"
+      }
+    ],
+    "presentation_preference": "比較音声は文章ごとに分け、同じ文章の条件を並べる。連結しない。"
+  }
+}

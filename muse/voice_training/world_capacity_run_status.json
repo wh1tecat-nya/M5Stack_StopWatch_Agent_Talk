@@ -1,0 +1,185 @@
+{
+  "date_jst": "2026-11-13",
+  "state": "capacity_expansion_not_adopted",
+  "preceding_user_feedback": "微改善したようには聞こえるが、大きくは変わらない",
+  "base_sha256": "83c385a3c61cef00c76bf68acd97aa6b9dd4e311366e9e2050324191dacbcd67",
+  "input_files_verified": 109,
+  "initial_equivalence": {
+    "clips": 92,
+    "control_exactly_equal": true,
+    "capacity_max_absolute_normalized_difference": 7.62939453125e-06,
+    "capacity_uv_changes": 0
+  },
+  "conditions": {
+    "control": {
+      "updates": 5000,
+      "best_step": 4600,
+      "width": 64,
+      "parameters": 78720,
+      "conv_macs_per_audio_second": 15513600,
+      "training_seconds": 78.82743420801125,
+      "checkpoint_sha256": "ef152795c782f213fa67f0b02ef30e7c68a87bd910e13bf10f805dd97ce9e367",
+      "initial_prediction_max_abs_difference": 0.0,
+      "initial_uv_changes": 0,
+      "train": {
+        "score": 1.1655932929780748,
+        "legacy_loss": 0.3396714884373877,
+        "envelope_mae_db": 5.958704272905986,
+        "envelope_step_error_db": 5.665402193864186,
+        "ap_gate_error": 0.05268214630066521,
+        "uv_error": 0.07465634872722957,
+        "pitch_mae_cents_joint_voiced": 48.05055046081543
+      },
+      "validation": {
+        "score": 1.3066468358039856,
+        "legacy_loss": 0.36314680278301237,
+        "envelope_mae_db": 6.333375263214111,
+        "envelope_step_error_db": 5.890116214752197,
+        "ap_gate_error": 0.06757863573729991,
+        "uv_error": 0.09935667365789413,
+        "pitch_mae_cents_joint_voiced": 60.85603904724121
+      },
+      "test": {
+        "score": 1.2952693939208983,
+        "legacy_loss": 0.3675816148519516,
+        "envelope_mae_db": 6.16027979850769,
+        "envelope_step_error_db": 5.806030511856079,
+        "ap_gate_error": 0.07683755308389664,
+        "uv_error": 0.0960819624364376,
+        "pitch_mae_cents_joint_voiced": 65.25965270996093
+      }
+    },
+    "capacity": {
+      "updates": 5000,
+      "best_step": 4600,
+      "width": 96,
+      "parameters": 167200,
+      "conv_macs_per_audio_second": 33100800,
+      "training_seconds": 105.86642337497324,
+      "checkpoint_sha256": "06347e3a90eb70a6b2dc4b65a5687449ea56981667cc360917ea23886a422d0a",
+      "initial_prediction_max_abs_difference": 7.62939453125e-06,
+      "initial_uv_changes": 0,
+      "train": {
+        "score": 1.1591911613941193,
+        "legacy_loss": 0.33949575738774407,
+        "envelope_mae_db": 5.931797895166609,
+        "envelope_step_error_db": 5.652660886446635,
+        "ap_gate_error": 0.05233403735069765,
+        "uv_error": 0.07388521880946225,
+        "pitch_mae_cents_joint_voiced": 47.3430069287618
+      },
+      "validation": {
+        "score": 1.3056460857391357,
+        "legacy_loss": 0.3637033820152283,
+        "envelope_mae_db": 6.314220523834228,
+        "envelope_step_error_db": 5.879127168655396,
+        "ap_gate_error": 0.06724275760352612,
+        "uv_error": 0.0994297780096531,
+        "pitch_mae_cents_joint_voiced": 61.11167755126953
+      },
+      "test": {
+        "score": 1.2944511413574218,
+        "legacy_loss": 0.3681244760751724,
+        "envelope_mae_db": 6.149968576431275,
+        "envelope_step_error_db": 5.795364093780518,
+        "ap_gate_error": 0.07674509845674038,
+        "uv_error": 0.09522834569215774,
+        "pitch_mae_cents_joint_voiced": 64.64710960388183
+      }
+    }
+  },
+  "base_metrics": {
+    "train": {
+      "score": 1.2100634160968993,
+      "legacy_loss": 0.34102120209071374,
+      "envelope_mae_db": 6.139561381604937,
+      "envelope_step_error_db": 5.702055235703786,
+      "ap_gate_error": 0.05721492118512591,
+      "uv_error": 0.07637680616850655,
+      "pitch_mae_cents_joint_voiced": 54.512103981441925
+    },
+    "validation": {
+      "score": 1.3280913591384889,
+      "legacy_loss": 0.36249116659164426,
+      "envelope_mae_db": 6.476663732528687,
+      "envelope_step_error_db": 5.91405291557312,
+      "ap_gate_error": 0.06691148020327091,
+      "uv_error": 0.09737533666193485,
+      "pitch_mae_cents_joint_voiced": 61.170349502563475
+    },
+    "test": {
+      "score": 1.3118818640708922,
+      "legacy_loss": 0.36551343500614164,
+      "envelope_mae_db": 6.268834066390991,
+      "envelope_step_error_db": 5.83543291091919,
+      "ap_gate_error": 0.07481300346553325,
+      "uv_error": 0.09286627769470215,
+      "pitch_mae_cents_joint_voiced": 68.71670875549316
+    }
+  },
+  "selection": "検証スコア上はcapacityが最小だが、容量増の効果が小さいため実機採用と追加の候補試聴は見送る。",
+  "validation_relative_improvement_vs_control": 0.0007658917753656791,
+  "test_relative_improvement_vs_control": 0.0006317238462646424,
+  "interpretation": "同じ初期出力・データ・更新数で容量を約2.12倍にしても、対照との差は検証約0.077%、比較約0.063%。この条件では容量拡大の効果が小さい。容量不足全般の否定や収束の保証ではない。",
+  "unit_tests_passed": 19,
+  "smoke_updates_per_condition": 3,
+  "reproduced_clips": 20,
+  "integrity_passed": true,
+  "local_result": "muse/.cache/irodori-world-capacity-results-20261113",
+  "trusted_input": "muse/.cache/irodori-world-capacity-input-20261113",
+  "audit_code_sha256": "2edef502189e50cfcce7b6c48843ea8b38c2732a49db52a3db99109ca34d9985",
+  "wav_validation": {
+    "previous_model": {
+      "sha256": "d9e1ae6a5a165452bfec6465d6d8eb0976b0cd1f5697edcd8653b96744b5a691",
+      "samples": 282240,
+      "rms": 0.09846374584358862,
+      "peak": 0.81512451171875,
+      "rails": 0
+    },
+    "control": {
+      "sha256": "4bfc1190dec931f28cb2cd9b39c884ba8f4f4bab87a597c335afdfb85b152a8e",
+      "samples": 282240,
+      "rms": 0.09846372899631281,
+      "peak": 0.849884033203125,
+      "rails": 0
+    },
+    "capacity": {
+      "sha256": "2fecd2ae9e7198566b4570423385a67e42d3341c0df92939ecf548c112ecc4ef",
+      "samples": 282240,
+      "rms": 0.09846378398304388,
+      "peak": 0.899993896484375,
+      "rails": 0
+    },
+    "approved_world_compact": {
+      "sha256": "d75b3fa29667adb87aa1c8748f8f8a4d955454cdce481ce4de407320d2466558",
+      "samples": 282240,
+      "rms": 0.09846376551556887,
+      "peak": 0.68438720703125,
+      "rails": 0
+    },
+    "previous_context": {
+      "sha256": "91d3b4515347e45bde5b937af2bd4b1c07f86bac3c60262c73863975d17bcb53",
+      "samples": 282240,
+      "rms": 0.09846376090937746,
+      "peak": 0.84405517578125,
+      "rails": 0
+    }
+  },
+  "training_device": "Mac CPU",
+  "training_finished": true,
+  "colab_reconnected": false,
+  "quality_approved": false,
+  "listening_feedback_requested": false,
+  "firmware_changed": false,
+  "text_to_speech_ready": false,
+  "C152_real_time_verified": false,
+  "inference_uses_teacher_WORLD_parameters": false,
+  "inference_uses_teacher_codec_latent": true,
+  "next_action": "直前の文脈拡張モデルを基準に、スペクトル包絡と非周期成分を個別に教師へ戻す診断で残る揺れを切り分ける。",
+  "limitations": [
+    "モデル幅・重み数・最適化時のパラメータ配置が変わる実験で、容量だけの唯一原因を断定しない。",
+    "単一seed・限られた更新数の比較。両条件とも検証10文で保存点を選択。比較文章は設計に使用済み。",
+    "畳み込みMACの推定は約2.13倍。本体の速度・RAM・量子化は未検証。",
+    "入力は教師codec潜在表現であり、任意文章TTSは未完成。"
+  ]
+}

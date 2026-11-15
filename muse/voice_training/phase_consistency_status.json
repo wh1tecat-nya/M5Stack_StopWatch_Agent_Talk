@@ -1,0 +1,39 @@
+{
+  "date_jst": "2026-11-12",
+  "state": "reviewed_no_meaningful_improvement_not_accepted",
+  "quality_target": "Irodori Small-MF07を22,050Hzへ変換した基準B（今回の同一返答文で品質確認済み）",
+  "user_feedback": "あまり変わらない。",
+  "implementation": "phase_consistency.py",
+  "runner": "probe_phase_consistency.py",
+  "algorithm": "Griffin-Lim, model phase initialization, momentum 0, 32 iterations",
+  "unit_tests_passed": 6,
+  "test_clips": 10,
+  "B_roundtrip_relative_l2": 1.1307808023275356e-07,
+  "teacher_magnitude_error_mean": {
+    "original": 0.6243664979934692,
+    "refined32": 0.5967264831066131
+  },
+  "candidate_uses_teacher_at_inference": false,
+  "diagnostic_only_branch_uses_teacher_magnitude": true,
+  "quality_approved": false,
+  "text_to_speech_ready": false,
+  "new_training_performed": false,
+  "firmware_changed": false,
+  "C152_real_time_verified": false,
+  "colab_gpu_stopped": true,
+  "result_directory": "muse/.cache/irodori-phase-consistency-20261112-v2",
+  "listening_directory": "muse/.cache/irodori-phase-consistency-20261112-v2/reply",
+  "limitations": [
+    "Macの全文処理。実機の速度・メモリー・ストリーミング未検証。",
+    "振幅予測の誤差も残り、位相再計算だけで目標品質へ達したという判断はしていない。",
+    "比較10文は設計と評価に使われ、独立した最終評価には新しい文章が必要。"
+  ],
+  "next_action": "予測WORLD音声を暫定合格の教師パラメータ再合成と比較する。声の高さ・有声無声・音色の予測誤差を改善し、音質確認後に量子化・C152での速度とメモリーの検証へ進む。",
+  "wav_validation_passed": true,
+  "pcm_output_scale": 32768,
+  "superseded_first_output": "muse/.cache/irodori-phase-consistency-20261112",
+  "world_probe_experiment": "world_probe_status.json",
+  "previous_user_feedback": "Bは問題ない、Cで加わる",
+  "subjective_evaluation_complete": true,
+  "world_training_experiment": "world_training_status.json"
+}

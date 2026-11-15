@@ -1,0 +1,153 @@
+{
+  "date_jst": "2026-11-13",
+  "state": "cross_sentence_improvement_confirmed_with_local_residuals",
+  "checkpoint_sha256": "1fd7d966f410f7e29aee6e1ee2f8ad64bfd87cbd8847057be93931d2384616d1",
+  "user_feedback": "めちゃくちゃ減った。診断③に比べ「聞こえるよしろねこ」の透明感・クリアさが若干弱く、「ちゃんと届いてるよ」が僅かに揺れる気がする。ただ、もうかなり違和感は消えているレベル。",
+  "residual_issues": [
+    "「聞こえるよ、しろねこ」の透明感・クリアさが診断参照より若干弱い。",
+    "「ちゃんと届いてるよ」にわずかな揺れの可能性がある。"
+  ],
+  "baseline_directory": "muse/.cache/irodori-world-envelope-baseline-20261113",
+  "weights_directory": "muse/.cache/irodori-world-envelope-baseline-20261113/fp32",
+  "weights_bytes": 459304,
+  "weights_sha256": "75c2b800975f31b5204b926df5f1cef6eaabcd6ee5f684d8a66c9a19d194382b",
+  "parameters": 114636,
+  "normalization_values": 190,
+  "conv_macs_per_audio_second": 22598400,
+  "prediction_roundtrip_exact": true,
+  "waveforms_reproduced": 10,
+  "maximum_chunk_prediction_difference": 3.814697265625e-06,
+  "chunk_voicing_labels_identical": true,
+  "output_chunk_frames": 64,
+  "inference_halo_frames_used": 50,
+  "export_unit_tests_passed": 2,
+  "samples": [
+    {
+      "id": "mf07-expand_test_04",
+      "label": "sibilants",
+      "text": "朱色のしおりを挟んで、読みかけの本を閉じたよ。",
+      "start_seconds": 0.0,
+      "end_seconds": 4.84
+    },
+    {
+      "id": "mf07-expand_test_03",
+      "label": "numbers",
+      "text": "十六個の箱を、四つずつ並べるとどうなるかな。",
+      "start_seconds": 5.34,
+      "end_seconds": 10.3
+    },
+    {
+      "id": "mf07-expand_test_08",
+      "label": "long",
+      "text": "一緒に確かめてくれてありがとう。まだ直したいところはあるけれど、少しずつ声が届くようになって、すみもうれしいよ。",
+      "start_seconds": 10.8,
+      "end_seconds": 22.12
+    }
+  ],
+  "montage_validation": {
+    "model": {
+      "sha256": "4f5649b3220c7f532b7aa0a4f0eba56463a9bee0913accb59f53f823e145c54e",
+      "samples": 487746,
+      "seconds": 22.12,
+      "rms": 0.0907511866837203,
+      "peak": 0.7513427734375,
+      "rails": 0
+    },
+    "teacher_world": {
+      "sha256": "8c93cc08f1a3a79648bdf988a6eae977d5e5ccd90b0bbe80c377d0a31272bb14",
+      "samples": 487746,
+      "seconds": 22.12,
+      "rms": 0.09075116839226317,
+      "peak": 0.899993896484375,
+      "rails": 0
+    }
+  },
+  "code_sha256": {
+    "world_envelope_export.py": "a7575057e5a51fb7cb951c79a315861ec3a8ec3bfe8134ea1dadef4bdd43a0bf",
+    "test_world_envelope_export.py": "9756afc84181619017c7a1cfc8bd7341aaf900797dba133768b467ec29f6e026",
+    "prepare_world_envelope_baseline.py": "eca3ec71b7daaf882a4c2bb64ac93bd01d5ecd60a68030ce91dd502b7b972539"
+  },
+  "implementation_readiness": {
+    "existing_text_preprocessing": "muse/overlay/sumi_tts.cpp: speech_copy() uses sumi_speech_readings / text2mecab",
+    "current_runtime": "sumi_tts.cpp still calls SanoTTS::synthesize; WORLD predictor/synthesis is not integrated",
+    "old_training_label_contract": "cached sanoTTS labelpack.py uses 192 channels, 22050Hz, hop256, and phoneme duration labels",
+    "new_restoration_input": "Irodori 32-channel codec latent at 25fps, aligned to WORLD 5ms frames",
+    "remaining": [
+      "native neural inference with FP32 parity",
+      "WORLD decoding/synthesis on C152",
+      "phoneme/audio time alignment for Irodori teacher data",
+      "duration and text-to-latent prediction training",
+      "device timing/RAM/power tests and playback integration"
+    ]
+  },
+  "new_training_performed": false,
+  "weights_changed": false,
+  "quantized": false,
+  "firmware_changed": false,
+  "colab_reconnected": false,
+  "quality_approved": false,
+  "quality_scope": "返答文と別の3文で大幅改善を確認。局所的なノイズ・揺らぎが残り、任意文章や実機の品質は未確認。",
+  "text_to_speech_ready": false,
+  "C152_real_time_verified": false,
+  "next_action": "WORLD復号と波形合成を移植し、本体で速度とRAMを測定する。文章から発音時間・codec潜在表現を予測する学習部分も未完成。",
+  "limitations": [
+    "別の3文は学習には未使用だが、比較データとして以前から設計に使用済み。独立した新規文章の最終評価ではない。",
+    "書き出した重みをPythonで復元して照合した検証。C/C++推論やESP32実測ではない。",
+    "MAC数は畳み込みのみ。WORLD合成、活性化、メモリー転送、文章処理、分割の重複計算を含まない。",
+    "入力は教師codec潜在表現であり、任意文章からのTTSは未完成。"
+  ],
+  "cross_sentence_feedback": {
+    "user_feedback": "かなり自然になっている。2文目の「四つずつ」に若干のノイズ、「どうなるかな。」の「かな。」に強めの揺らぎ。3文目の「ありがとう」「けれど」に若干の揺らぎ。過去の手法より相当に違和感が少ない。",
+    "comparison_clarification": "Aで目立ち、Bではほぼ気にならない",
+    "scope": "提示した3文での聴取。任意文章や実機の合格とは扱わない。",
+    "issues": [
+      {
+        "sample": "mf07-expand_test_03",
+        "phrase": "四つずつ",
+        "issue": "若干のノイズっぽさ"
+      },
+      {
+        "sample": "mf07-expand_test_03",
+        "phrase": "かな。",
+        "issue": "強めの揺らぎ"
+      },
+      {
+        "sample": "mf07-expand_test_08",
+        "phrase": "ありがとう",
+        "issue": "若干の揺らぎ"
+      },
+      {
+        "sample": "mf07-expand_test_08",
+        "phrase": "けれど",
+        "issue": "若干の揺らぎ"
+      }
+    ],
+    "presentation_preference": "比較音声は文章ごとに分け、同じ文章の条件を並べる。連結しない。"
+  },
+  "listening_feedback_pending": false,
+  "residual_component_feedback": {
+    "user_feedback": "「かな」はあまり変わっていない気がする。全体的には①（包絡だけ教師へ戻す）が一番良くなっている。",
+    "interpretation": "包絡が引き続き全体の改善対象。「かな」の残差は単一成分の交換では明確な改善を確認できず、成分間の組み合わせを調べる。",
+    "scope": "短い2文目の主観比較。単独原因や他の文章への一般化は断定しない。"
+  },
+  "combined_component_feedback": {
+    "user_feedback": "全体の性質は②（包絡＋音程と有声判定を教師へ戻す）が近い。人間っぽい抑揚は①（包絡＋非周期成分を教師へ戻す）が良い。「かな」自体はどれも変わらず。",
+    "timbre_preference": "teacher_envelope_pitch",
+    "prosody_preference": "teacher_envelope_aperiodicity",
+    "interpretation": "声質の近さと自然な抑揚を別の評価軸として扱う。教師の音程への一致だけで自然さを判断しない。",
+    "reference_inclusion": "「どれも」に③基準Bを含むかは確認待ち。先の「Bはほぼ気にならない」との差を勝手に解釈しない。",
+    "scope": "提示した数の比較文。改善モデルや任意文章の品質を承認した回答ではない。"
+  },
+  "source_resynthesis_feedback": {
+    "reference_clarification": "組み合わせ比較の③基準Bにも同程度の揺らぎがある。",
+    "source_comparison": "元音声①では気にならないが、圧縮なし再合成②でも若干気になる。吃音寄りの音で、声質の影響ではないかとの見解。",
+    "interpretation": "小型モデルの予測や特徴圧縮だけでは語尾の残差を説明できない。元音声から分析・再合成する段階にも違和感が出る。声質との相性は仮説であり、吃音や元音声の欠陥とは断定しない。",
+    "scope": "数の比較文の語尾。これまで確認した全体の大幅改善は維持する。"
+  },
+  "analysis_variant_feedback": {
+    "user_feedback": "大きくは変わらない。②は若干全体的に違うような気もするが分からない。③は変わりない気がする。「かな」はどれも大きく変わらず、③がごく僅かに改善したかもしれない。",
+    "interpretation": "明確で再現性のある聴感改善は確認できない。追加有声判定を外す案・Harvestへ変更する案とも現行方式には採用しない。",
+    "residual": "「かな」の再合成由来の引っかかりは未解決。声質と再合成方式の相性は仮説として残す。"
+  },
+  "native_predictor_status": "muse/voice_training/world_native_status.json"
+}
