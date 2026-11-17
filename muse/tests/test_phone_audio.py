@@ -75,6 +75,30 @@ int main(void) {
     assert(sumi_phone_buffer_read(&audio, output, sizeof(output)) == sizeof(output));
     assert(sumi_phone_buffer_append(&audio, &packet));
     assert(audio.written - audio.consumed == sizeof(storage));
+
+    static const uint8_t prefill[SUMI_PHONE_PREROLL] = {0};
+    audio = (struct sumi_phone_buffer){.bytes = storage, .turn = turn};
+    packet = (struct sumi_phone_packet){SUMI_PHONE_REPLY_BEGIN, turn, SUMI_PHONE_REPLY_PREFILL, NULL, 0};
+    assert(sumi_phone_buffer_begin(&audio, &packet));
+    packet = (struct sumi_phone_packet){SUMI_PHONE_REPLY_PCM, turn, 0, prefill, sizeof(prefill)};
+    assert(sumi_phone_buffer_append(&audio, &packet));
+    assert(!sumi_phone_buffer_playable(&audio, false, 640));
+    packet = (struct sumi_phone_packet){SUMI_PHONE_REPLY_PLAY, turn + 1, 0, NULL, 0};
+    assert(!sumi_phone_buffer_allow_playback(&audio, &packet));
+    packet.turn = turn;
+    assert(sumi_phone_buffer_allow_playback(&audio, &packet));
+    assert(!sumi_phone_buffer_allow_playback(&audio, &packet));
+    assert(sumi_phone_buffer_playable(&audio, false, 640));
+
+    audio = (struct sumi_phone_buffer){.bytes = storage, .turn = turn};
+    packet = (struct sumi_phone_packet){SUMI_PHONE_REPLY_BEGIN, turn, SUMI_PHONE_REPLY_PREFILL, NULL, 0};
+    assert(sumi_phone_buffer_begin(&audio, &packet));
+    packet = (struct sumi_phone_packet){SUMI_PHONE_REPLY_PCM, turn, 0, samples, sizeof(samples)};
+    assert(sumi_phone_buffer_append(&audio, &packet));
+    assert(!sumi_phone_buffer_playable(&audio, false, 640));
+    end.offset = sizeof(samples);
+    assert(sumi_phone_buffer_finish(&audio, &end));
+    assert(sumi_phone_buffer_playable(&audio, false, 640));
 }
 ''')
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-fsanitize=address,undefined',

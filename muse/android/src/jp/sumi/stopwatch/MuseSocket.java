@@ -103,6 +103,7 @@ final class MuseSocket implements Closeable {
     }
 
     void send(byte[] data) throws IOException { frame(2, data); }
+    void ping() throws IOException { frame(9, new byte[0]); }
 
     private void frame(int opcode, byte[] data) throws IOException {
         output.write(0x80 | opcode);
@@ -161,8 +162,10 @@ final class MuseSocket implements Closeable {
                     offset += count;
                 }
                 if (opcode == 8) throw new EOFException("Muse closed WebSocket");
-                if (opcode == 9) frame(10, data);
-                else if (opcode == 2 && fragments == null) {
+                if (opcode == 9 || opcode == 10) {
+                    if (opcode == 9) frame(10, data);
+                    if (fragments == null) return null;
+                } else if (opcode == 2 && fragments == null) {
                     if (last) return data;
                     fragments = new ByteArrayOutputStream();
                     fragments.write(data);
@@ -170,7 +173,7 @@ final class MuseSocket implements Closeable {
                     if (fragments.size() + data.length > LIMIT) throw new IOException("WebSocket message too large");
                     fragments.write(data);
                     if (last) return fragments.toByteArray();
-                } else if (opcode != 10) throw new IOException("Unexpected WebSocket opcode");
+                } else throw new IOException("Unexpected WebSocket opcode");
                 first = octet();
             }
         } finally {

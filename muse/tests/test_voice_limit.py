@@ -47,13 +47,18 @@ class VoiceLimit(unittest.TestCase):
     }
     if(scenario==101 && frame==800) push(MUSE_PTT_UP);
     if((scenario==102 || scenario==108 || scenario==109) && frame==10) push(MUSE_PTT_UP);
+    if(scenario==110 && frame==20) push(MUSE_PTT_UP);
     if(scenario==41 && frame==2)''')
             source += r'''
 void sumi_ui_wake(void) {}
 void muse_audio_quiet(void) {}
-bool sumi_noise_test_active(void) { return false; }
 bool sumi_asr_enabled(void) { return scenario==108; }
 bool sumi_phone_current(uint32_t turn) { return turn == 1; }
+static size_t streamed_frames;
+void sumi_phone_note_progress(uint32_t turn, const int16_t *pcm, size_t frames) {
+    assert(turn==1 && pcm==s_rec && frames==s_rec_n && frames>streamed_frames);
+    streamed_frames=frames;
+}
 void sumi_ui_toggle_settings(void) {}
 bool sumi_ui_settings_open(void) { return false; }
 bool sumi_wifi_active(void) { return false; }
@@ -81,12 +86,14 @@ int main(int argc,char**argv){
         assert(second);
     } else {
         s_rec=calloc(MAX_FRAMES,sizeof(int16_t));s_pre_fill=3;
-        s_phone_turn=scenario==109 ? 1 : 0;
+        s_phone_turn=scenario==109 || scenario==110 ? 1 : 0;
         size_t count=0;char why[96];assert(record(false,&count,why,sizeof(why)));
         assert(s_pre_fill==0 && s_rec[0]==101);
         if(scenario==101)assert(count==MAX_FRAMES && s_rec_n==MAX_FRAMES && frame==800);
+        else if(scenario==110)assert(count==20*MUSE_AUDIO_CHUNK && frame==26 && streamed_frames==s_rec_n);
         else assert(count==10*MUSE_AUDIO_CHUNK && frame==16 && s_rec_n==16*MUSE_AUDIO_CHUNK);
-        if(scenario==108 || scenario==109)assert(notes==0 && !s_live && !s_tried);
+        if(scenario!=110)assert(streamed_frames==0);
+        if(scenario>=108)assert(notes==0 && !s_live && !s_tried);
         free(s_rec);
     }
     free(s_pre);return 0;
@@ -99,7 +106,7 @@ int main(int argc,char**argv){
                 '-I',str(stage),str(stage/'run.c'),str(SDK/'components/muse/muse_voice_call_core.c'),'-lm','-o',str(stage/'run')],
                 capture_output=True,text=True)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-            for case in [100,101,102,103,104,105,106,107,108,109]:
+            for case in range(100,111):
                 result=subprocess.run([str(stage/'run'),str(case)],capture_output=True,text=True,timeout=10)
                 self.assertEqual(result.returncode,0,f'case {case}: '+result.stdout+result.stderr)
 

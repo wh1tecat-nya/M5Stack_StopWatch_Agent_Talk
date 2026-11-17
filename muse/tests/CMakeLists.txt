@@ -7,7 +7,7 @@ set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory("${SDK}/managed_components/lvgl__lvgl" lvgl)
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/fakes")
-foreach(header muse_state.h muse_settings.h muse_voice.h muse_link.h muse_wifi.h muse_ble.h esp_timer.h esp_heap_caps.h esp_log.h nvs.h)
+foreach(header muse_state.h muse_settings.h muse_voice.h muse_link.h muse_wifi.h muse_ble.h esp_app_desc.h esp_timer.h esp_heap_caps.h esp_log.h nvs.h)
     file(WRITE "${CMAKE_BINARY_DIR}/fakes/${header}" "#include \"ui_platform.h\"\n")
 endforeach()
 add_executable(render_ui render_ui.c "${SDK}/components/muse/sumi_assets.c" "${SDK}/components/muse/sumi_font_24.c" "${SDK}/components/muse/sumi_clock_64.c"

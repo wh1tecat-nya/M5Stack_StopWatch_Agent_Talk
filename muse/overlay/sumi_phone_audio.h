@@ -14,7 +14,12 @@
 #define SUMI_PHONE_NOTE_MAX (15 * 32000)
 #define SUMI_PHONE_REPLY_MAX (120 * 32000)
 #define SUMI_PHONE_REPLY_STREAM UINT32_MAX
+#define SUMI_PHONE_NOTE_STREAM UINT32_MAX
+#define SUMI_PHONE_REPLY_PREFILL (UINT32_MAX - 1)
 #define SUMI_PHONE_FEATURE_STREAM 1u
+#define SUMI_PHONE_FEATURE_PUSH 2u
+#define SUMI_PHONE_FEATURE_NOTE_STREAM 4u
+#define SUMI_PHONE_FEATURE_REPLY_PREFILL 8u
 
 enum sumi_phone_message {
     SUMI_PHONE_HELLO = 1,
@@ -30,6 +35,12 @@ enum sumi_phone_message {
     SUMI_PHONE_REPLY_STATUS,
     SUMI_PHONE_CAPTION,
     SUMI_PHONE_GENERATING,
+    SUMI_PHONE_NOTE_SCOPE,
+    SUMI_PHONE_PUSH_BEGIN,
+    SUMI_PHONE_PUSH_READY,
+    SUMI_PHONE_PUSH_DONE,
+    SUMI_PHONE_NOTE_STREAM_ENABLE,
+    SUMI_PHONE_REPLY_PLAY,
 };
 
 enum sumi_phone_setting {
@@ -60,8 +71,12 @@ struct sumi_phone_buffer {
     uint32_t expected;
     bool finished;
     bool streaming;
+    bool playback_deferred;
 };
 
+bool sumi_phone_buffer_begin(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet);
+bool sumi_phone_buffer_allow_playback(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet);
+bool sumi_phone_buffer_playable(const struct sumi_phone_buffer *buffer, bool started, size_t chunk_bytes);
 bool sumi_phone_buffer_append(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet);
 bool sumi_phone_buffer_finish(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet);
 size_t sumi_phone_buffer_read(struct sumi_phone_buffer *buffer, void *output, size_t length);

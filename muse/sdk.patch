@@ -65,28 +65,19 @@
      muse_board->display_unlock();
 --- a/esp32/components/muse/muse_input.c
 +++ b/esp32/components/muse/muse_input.c
-@@ -15,6 +15,12 @@
+@@ -15,6 +15,11 @@
   */
  
  #include "muse_input.h"
 +#include "sumi_ui.h"
 +#include "sumi_asr.h"
-+#include "sumi_panel_test.h"
 +#include "sumi_charge.h"
 +#include "sumi_tts.h"
 +#include "sumi_wifi.h"
  
  #include <stdint.h>
  #include <stdatomic.h>
-@@ -27,6 +33,7 @@
- #include "esp_log.h"
- #include "freertos/task.h"
- #include "sdkconfig.h"
-+#include "esp_timer.h"
- #if CONFIG_PM_ENABLE
- #include "esp_pm.h"
- #include "esp_sleep.h"
-@@ -97,6 +104,8 @@
+@@ -97,6 +102,8 @@
  static atomic_uint s_call_pending;
  static atomic_uint s_mark_seq;
  static atomic_uint s_call_epoch;
@@ -95,7 +86,7 @@
  uint32_t muse_input_call_epoch(void) { return atomic_load(&s_call_epoch); }
  void muse_input_clear_call_pending(uint32_t mark)
  {
-@@ -171,6 +180,7 @@
+@@ -171,6 +178,7 @@
      if (asleep != muse_state_asleep()) {
          ESP_LOGI(TAG, "%s (%s)", asleep ? "sleeping" : "waking", why);
          muse_state_set_asleep(asleep);
@@ -103,7 +94,7 @@
  #if CONFIG_MUSE_BOARD_SENSECAP_WATCHER
          if (asleep) {
              muse_review_close();   /* auto-sleep too: waking shows the live caption */
-@@ -314,12 +324,9 @@
+@@ -314,12 +322,9 @@
              swallow = true;
          } else if (muse_state_asleep()) {
              set_asleep(false, muse_board->talk_button);
@@ -119,7 +110,7 @@
          } else if (muse_menu_is_open()) {
              muse_state_poke();
              if (!muse_board->keyboard) muse_menu_key(MUSE_MENU_SELECT);
-@@ -439,6 +446,7 @@
+@@ -439,6 +444,7 @@
          set_asleep(false, "pairing");
          return;
      }
@@ -127,56 +118,7 @@
      if (muse_voice_in_call()) return;
      int after = muse_settings_sleep_s();
      float mode_t;
-@@ -528,12 +536,34 @@
-  * at the crystal clock a long line of serial output can stall the USB console
-  * until the host reopens the port.
-  */
-+static atomic_int s_panel_test;
-+static int64_t s_panel_deadline;
-+void sumi_panel_test_request(void) { atomic_store(&s_panel_test, 1); }
-+int sumi_panel_test_state(void) { return atomic_load(&s_panel_test); }
-+bool sumi_panel_test_active(void) { int s = atomic_load(&s_panel_test); return s >= 1 && s <= 3; }
-+static bool panel_test_pause(void)
-+{
-+    int state = atomic_load(&s_panel_test);
-+    if (state == 1) {
-+        s_panel_deadline = esp_timer_get_time() + 20000000;
-+        atomic_store(&s_panel_test, 2);
-+        state = 2;
-+        ESP_LOGI(TAG, "panel test: stopping display for 20 seconds");
-+    }
-+    if (state == 2 && esp_timer_get_time() >= s_panel_deadline) {
-+        atomic_store(&s_panel_test, 3);
-+        return false;
-+    }
-+    return state == 2;
-+}
- static bool update_power(void)
- {
-     static bool paused;
--    bool pause = muse_board->display_pause && muse_state_on_battery() && muse_state_asleep()
--                 && muse_ui_dark() && muse_voice_resting();
--    bool want_low = pause && !muse_console_host();
-+    bool test = panel_test_pause();
-+    bool pause = muse_board->display_pause && (test || (muse_state_on_battery() && muse_state_asleep()
-+                 && muse_ui_dark() && muse_voice_resting()));
-+    /* Diagnostic keeps CPU and audio awake; only the display supply is changed. */
-+    bool want_low = pause && !test && !muse_console_host();
-     if (pause == paused && want_low == s_cpu_low) {
-         return paused;
-     }
-@@ -547,6 +577,10 @@
-         muse_board->display_pause(false);
-     }
-     paused = pause;
-+    if (!paused && atomic_load(&s_panel_test) == 3) {
-+        atomic_store(&s_panel_test, 4);
-+        ESP_LOGI(TAG, "panel test: display resumed");
-+    }
-     s_cpu_low = want_low;
-     ESP_LOGI(TAG, "%s", s_cpu_low ? "low power: display paused"
-                         : paused  ? "display paused (USB host: CPU at full speed)"
-@@ -572,7 +606,7 @@
+@@ -572,7 +578,7 @@
          s_nap_now = false;
          muse_state_set_as_if_battery(false);
      }
@@ -185,7 +127,7 @@
                 && (s_nap_now || (s_cpu_low && now - low_since >= pdMS_TO_TICKS(WIFI_NAP_MS)));
      if (nap != napping) {
          napping = nap;
-@@ -614,38 +648,12 @@
+@@ -614,38 +620,12 @@
          power_off();
      }
      if (release) power_release();
@@ -228,7 +170,7 @@
  }
  
  static void input_task(void *arg)
-@@ -657,6 +665,7 @@
+@@ -657,6 +637,7 @@
      TickType_t powered = xTaskGetTickCount() - pdMS_TO_TICKS(POWER_MS);
  
      for (;;) {
@@ -236,7 +178,7 @@
          unsigned ev = muse_board->poll_buttons() | atomic_exchange(&s_touch_talk_events, 0);
  #if CONFIG_MUSE_VIDEO
          /* Any press leaves the video view (its release then does nothing). */
-@@ -845,6 +854,32 @@
+@@ -845,6 +826,32 @@
   */
  static bool console_command(char *line, bool whole)
  {
@@ -331,22 +273,24 @@
  {
      s_last_seq = 0;
 -    s_conn.sub_id = open_stream(K_SUB, "POST", "/chat/subscribe", "application/json", "application/x-ndjson", "{}",
-+    strlcpy(s_sub_session, sumi_chat_id(), sizeof(s_sub_session));
++    sumi_chat_id(s_sub_session);
 +    char body[64] = "{}";
 +    if (s_sub_session[0]) snprintf(body, sizeof(body), "{\"session_id\":\"%s\"}", s_sub_session);
 +    s_conn.sub_id = open_stream(K_SUB, "POST", "/chat/subscribe", "application/json", "application/x-ndjson", body,
                                  true);
      return s_conn.sub_id != 0;
  }
-@@ -914,6 +924,7 @@
+@@ -914,6 +924,9 @@
  
  static bool ensure_connected(void)
  {
-+    if (s_connected && strcmp(s_sub_session, sumi_chat_id())) disconnect("chat selection changed");
++    char session[SUMI_CHAT_ID_BYTES + 1];
++    sumi_chat_id(session);
++    if (s_connected && strcmp(s_sub_session, session)) disconnect("chat selection changed");
      if (s_connected) {
          return true;
      }
-@@ -995,6 +1006,7 @@
+@@ -995,6 +1008,7 @@
  
  static void turn_finish(void)
  {
@@ -354,7 +298,7 @@
      turn_reset_streams();
      s_turn.phase = P_IDLE;
      s_turn.dict_id = s_turn.chat_id = 0;
-@@ -1046,6 +1058,7 @@
+@@ -1046,6 +1060,7 @@
      s_turn.review = muse_review_turn();
  #endif
      s_turn.text = text;
@@ -362,7 +306,7 @@
      s_turn.tts_msg = -1;
      memset(s_marks, 0, sizeof(s_marks));
      s_reply_shown[0] = '\0';
-@@ -1055,6 +1068,23 @@
+@@ -1055,6 +1070,23 @@
          turn_fail(muse_hatch_configured() ? "CAN'T REACH MUSE" : "MUSE NOT SET UP");
          return false;
      }
@@ -386,7 +330,7 @@
      return true;
  }
  
-@@ -1164,8 +1194,12 @@
+@@ -1164,8 +1196,12 @@
      if (!s_turn.chat_id) {
          return false;
      }
@@ -401,7 +345,7 @@
          return false;
      }
      muse_hatch_wav_header(s_turn.note, MIC_RATE);
-@@ -1212,16 +1246,17 @@
+@@ -1212,16 +1248,17 @@
  
  /*
   * Posts `text` to the chat and waits for the reply. A long message goes up in
@@ -423,7 +367,7 @@
          cJSON_AddStringToObject(body, "device", MUSE_CHAT_SPOKEN_DEVICE);
      }
      char *json = cJSON_PrintUnformatted(body);
-@@ -1263,7 +1298,7 @@
+@@ -1263,7 +1300,7 @@
      }
      ESP_LOGI(TAG, "heard: \"%s\"", text);
      emit(MUSE_HATCH_EV_HEARD, text);
@@ -432,7 +376,7 @@
  }
  
  /* A typed turn: the text goes straight to the chat. */
-@@ -1273,7 +1308,7 @@
+@@ -1273,7 +1310,7 @@
          return;
      }
      ESP_LOGI(TAG, "typed turn: %u bytes", (unsigned)strlen(text));
@@ -441,7 +385,7 @@
      if (s_turn.phase == P_WAIT_REPLY) {
          mark(M_SENT);
          muse_hatch_console("sent", nullptr, "\"bytes\":%u", (unsigned)strlen(text));
-@@ -1357,7 +1392,9 @@
+@@ -1357,7 +1394,9 @@
          parent = cJSON_GetStringValue(cJSON_GetObjectItem(payload, "parent_message_id"));
      }
      /* Once the ack names our message, replies to anything else are someone else's. */
@@ -452,7 +396,7 @@
          muse_chat_reject(&s_turn.rejected, id);
          return -1;
      }
-@@ -1491,6 +1528,10 @@
+@@ -1491,6 +1530,10 @@
      if (strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(line, "type")) ?: "", "event") != 0) {
          return;   /* the subscription ack */
      }
@@ -463,7 +407,7 @@
      cJSON *seq = cJSON_GetObjectItem(line, "seq");
      if (cJSON_IsNumber(seq)) {
          int64_t v = (int64_t)seq->valuedouble;
-@@ -1567,6 +1608,14 @@
+@@ -1567,6 +1610,14 @@
      cJSON *root = cJSON_Parse(s->line);
      cJSON *result = cJSON_GetObjectItem(root, "result");
      cJSON *obj = cJSON_IsObject(result) ? result : root;
@@ -478,7 +422,7 @@
      const char *keys[] = { "message_id", "reply_to_message_id" };
      for (int k = 0; k < 2; k++) {
          const char *id = cJSON_GetStringValue(cJSON_GetObjectItem(obj, keys[k]));
-@@ -1593,31 +1642,15 @@
+@@ -1593,31 +1644,15 @@
          if (m.tts != TTS_QUEUED) {
              continue;
          }
@@ -516,7 +460,7 @@
          show_reply_start(m);
          return;
      }
-@@ -1625,6 +1658,15 @@
+@@ -1625,6 +1660,15 @@
  
  static void tts_data(const uint8_t *data, size_t len)
  {
@@ -532,7 +476,7 @@
      if (s_turn.mp3_len + len > MP3_BUF) {
          ESP_LOGW(TAG, "MP3 buffer full, dropping %u bytes", (unsigned)len);
          len = MP3_BUF - s_turn.mp3_len;
-@@ -1671,6 +1713,28 @@
+@@ -1671,6 +1715,28 @@
  static void decode(void)
  {
      if (s_turn.tts_msg < 0) {
@@ -561,7 +505,7 @@
          return;
      }
      if (s_turn.silent) {
-@@ -2057,6 +2121,15 @@
+@@ -2057,6 +2123,15 @@
              turn_finish();
          }
          break;
@@ -577,7 +521,7 @@
      case CMD_TEXT:
          if (s_turn.phase != P_IDLE && !s_turn.text) {
              muse_hatch_console("error", "BUSY WITH A VOICE TURN", nullptr);
-@@ -2202,11 +2275,8 @@
+@@ -2202,11 +2277,8 @@
      s_in = xStreamBufferCreateWithCaps(IN_BYTES + 1, 1, MALLOC_CAP_SPIRAM);
      s_out = xStreamBufferCreateWithCaps(OUT_BYTES, 1, MALLOC_CAP_SPIRAM);
      s_turn.chunk = static_cast<uint8_t *>(psram_alloc(DICT_CHUNK_BYTES + sizeof(MUSE_HATCH_NOTE_TAIL)));
@@ -589,7 +533,7 @@
      for (auto &s : s_streams) {
          s.line = static_cast<char *>(psram_alloc(NDJSON_LINE_MAX));
          s.cap = NDJSON_LINE_MAX;
-@@ -2216,7 +2286,7 @@
+@@ -2216,7 +2288,7 @@
      muse_voice_call_init();   /* calls stay unavailable if it fails; notes still work */
  #endif
      /* Stack in PSRAM: TLS, Noise and the MP3 decoder (~16 KB of scratch) all run here. */
@@ -598,7 +542,7 @@
          xTaskCreatePinnedToCoreWithCaps(hatch_task, "muse_chat", 48 * 1024, nullptr, 5, nullptr, 0,
                                          MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
          ESP_LOGE(TAG, "start failed");
-@@ -2236,6 +2306,19 @@
+@@ -2236,6 +2308,19 @@
  extern "C" bool muse_hatch_ready(void)
  {
      return s_cmds && muse_hatch_configured() && muse_wifi_connected();
@@ -618,7 +562,7 @@
  }
  
  extern "C" void muse_hatch_turn_begin(void)
-@@ -2406,7 +2489,7 @@
+@@ -2406,7 +2491,7 @@
          return 0;
      }
      mp3dec_init(dec);
@@ -702,7 +646,7 @@
          emit(MUSE_VOICE_CALL_EV_ENDED, "CALL FAILED");
          return true;
      }
-+    strlcpy(s_requested_thread, sumi_chat_id(), sizeof(s_requested_thread));
++    sumi_chat_id(s_requested_thread);
 +    const char *thread = s_requested_thread;
 +    if (thread[0]) {
 +        size_t len = strlen(admission);
@@ -727,17 +671,16 @@
       * paused, unless wait_buttons is set); returns MUSE_BTN_* edges. */
 --- a/esp32/components/muse/boards/board_m5stack_stopwatch.c
 +++ b/esp32/components/muse/boards/board_m5stack_stopwatch.c
-@@ -46,6 +46,9 @@
+@@ -46,6 +46,8 @@
   * M5PM1 user manual (docs/ in M5PM1 be9a545: IRQ Status 1-3, BTN_CFG_1) and
   * M5Unified's ES8311 notes for the StopWatch (M5Unified.inl).
   */
 +#include "sumi_charge.h"
 +#include "sumi_battery.h"
-+#include "sumi_noise_test.h"
  #include <stdlib.h>
  #include <string.h>
  
-@@ -122,6 +125,7 @@
+@@ -122,6 +124,7 @@
  
  #define PMIC_ADDR 0x6E
  #define PMIC_PWR_CFG 0x06
@@ -745,7 +688,7 @@
  #define PMIC_PWR_LED BIT(4)
  #define PMIC_PWR_5V_OUT 0x08       /* 5 V boost to the Grove port */
  #define PMIC_I2C_CFG 0x09          /* 0: no I2C idle sleep */
-@@ -129,6 +133,7 @@
+@@ -129,6 +132,7 @@
  #define PMIC_GPIO_MODE 0x10        /* 1 = output */
  #define PMIC_GPIO_OUT 0x11
  #define PMIC_GPIO_IN 0x12
@@ -753,7 +696,7 @@
  #define PMIC_GPIO_OD 0x13          /* 1 = open drain */
  #define PMIC_GPIO_FUNC0 0x16       /* two bits per GPIO 0-3; 0 = GPIO */
  #define PMIC_CHG_STAT BIT(2)       /* low while charging */
-@@ -208,7 +213,7 @@
+@@ -208,7 +212,7 @@
  
  static i2c_master_bus_handle_t s_i2c;
  static i2c_master_dev_handle_t s_pmic, s_ioe, s_tp;
@@ -762,7 +705,7 @@
  static esp_lcd_panel_io_handle_t s_io;
  static esp_lcd_panel_handle_t s_panel;
  static const audio_codec_if_t *s_codec;
-@@ -259,9 +264,64 @@
+@@ -259,9 +263,64 @@
  static esp_err_t pmic_update(uint8_t reg, uint8_t mask, uint8_t bits)
  {
      uint8_t v;
@@ -830,7 +773,7 @@
  }
  
  /* M5Unified's M5PM1_Class::setLedEnLevel controls PWR_CFG bit4.
-@@ -277,11 +337,6 @@
+@@ -277,11 +336,6 @@
      return pmic_update(PMIC_PWR_CFG, PMIC_PWR_LED, *usb ? PMIC_PWR_LED : 0);
  }
  
@@ -842,21 +785,10 @@
  
  /* Writing 0 clears every status bit and lets the IRQ line go high again. */
  static esp_err_t pmic_irq_clear(void)
-@@ -380,6 +435,22 @@
+@@ -380,6 +434,11 @@
      return ioe_update(IOE_OUT, pins, high ? pins : 0);
  }
  
-+/* Read the output latch, not the actual analog supply voltage. */
-+int sumi_audio_rail_enabled(void)
-+{
-+    uint8_t b[2];
-+    xSemaphoreTake(s_ioe_lock, portMAX_DELAY);
-+    esp_err_t err = reg_read(s_ioe, IOE_OUT, b, sizeof(b));
-+    xSemaphoreGive(s_ioe_lock);
-+    if (err != ESP_OK) return -1;
-+    return !!((b[0] | b[1] << 8) & IOE_AUDIO);
-+}
-+
 +static esp_err_t speaker_power(bool on)
 +{
 +    return ioe_set(IOE_SPK, on);
@@ -865,7 +797,7 @@
  /* The codec driver switches the amp through this as the speaker opens and closes. */
  static int ioe_gpio_setup(int16_t gpio, audio_gpio_dir_t dir, audio_gpio_mode_t mode)
  {
-@@ -455,6 +526,8 @@
+@@ -455,6 +514,8 @@
  {
      s_ioe_lock = xSemaphoreCreateMutex();
      ESP_RETURN_ON_FALSE(s_ioe_lock, ESP_ERR_NO_MEM, TAG, "ioe lock");
@@ -874,7 +806,7 @@
      const i2c_master_bus_config_t i2c_cfg = {
          .i2c_port = I2C_NUM_0,
          .sda_io_num = I2C_SDA,
-@@ -474,11 +547,14 @@
+@@ -474,11 +535,14 @@
       * it, and the 5 V boost off: nothing Muse uses hangs off the Grove port. */
      ESP_RETURN_ON_ERROR(reg_write(s_pmic, PMIC_I2C_CFG, (uint8_t[]){ 0 }, 1), TAG, "pmic i2c sleep off");
      ESP_RETURN_ON_ERROR(reg_write(s_pmic, PMIC_WDT, (uint8_t[]){ 0 }, 1), TAG, "pmic watchdog off");
@@ -889,7 +821,7 @@
      bool usb;
      ESP_RETURN_ON_ERROR(read_usb_power(&usb), TAG, "power LED");
      /* Factory hal_pmic.cpp disables single-click reset. Keep double-click
-@@ -1064,16 +1140,14 @@
+@@ -1064,16 +1128,14 @@
      uint8_t in;
      ESP_RETURN_ON_ERROR(reg_read(s_pmic, PMIC_GPIO_IN, &in, 1), TAG, "pmic read");
      ESP_RETURN_ON_ERROR(read_usb_power(&out->usb), TAG, "power LED");
@@ -912,7 +844,7 @@
      return ESP_OK;
  }
  
-@@ -1081,6 +1155,7 @@
+@@ -1081,6 +1143,7 @@
   * button turns it back on. Do not substitute an ESP GPIO or deep-sleep wake. */
  static esp_err_t power_off(void)
  {
@@ -920,7 +852,7 @@
      uint8_t cmd = PMIC_SHUTDOWN;
      /* Don't turn off peripheral rails first: on a failed command the shared
       * input/UI must be able to display COULDN'T POWER OFF and remain usable. */
-@@ -1124,6 +1199,7 @@
+@@ -1124,6 +1187,7 @@
      .audio_init = audio_init,
      .mic_slot = 0,              /* one mic, on the left slot */
      .audio_power = audio_power,
@@ -1176,18 +1108,21 @@
  # needs is listed unconditionally. Managed components (LVGL, codecs, BSPs) come
  # from idf_component.yml, where rules keep them out of Link-only builds.
 -set(srcs)
-+set(srcs "sumi_clock.c" "sumi_clock_64.c" "sumi_ui.c" "sumi_assets.c" "sumi_tts.cpp" "sumi_font_24.c" "sumi_chat.c" "sumi_voice_options.c" "sumi_noise_test.c" "sumi_asr.c" "sumi_phone.c" "sumi_phone_audio.c")
++set(srcs "sumi_clock.c" "sumi_clock_64.c" "sumi_ui.c" "sumi_assets.c" "sumi_tts.cpp" "sumi_font_24.c" "sumi_chat.c" "sumi_voice_options.c" "sumi_asr.c" "sumi_phone.c" "sumi_phone_audio.c" "sumi_ota.c")
  set(embed)
  if(CONFIG_MUSE_ENABLED)
      list(APPEND srcs
-@@ -192,6 +192,7 @@
+@@ -192,8 +192,9 @@
  endif()
  
  set(muse_priv_requires
 +    sanotts
      esp_timer esp_driver_usb_serial_jtag esp_psram nvs_flash esp_pm esp_event esp_netif
-     bt esp-tls mbedtls esp_app_format esp_http_client
+-    bt esp-tls mbedtls esp_app_format esp_http_client
++    bt esp-tls mbedtls esp_app_format esp_http_client app_update esp_partition
      noise_core minimp3 muse_vstream tinyh264 libvpx_vp8
+     esp_lcd esp_adc esp_driver_i2s esp_driver_ledc esp_driver_spi esp_driver_uart esp_wifi
+     esp_driver_pcnt efuse
 --- a/esp32/components/muse/muse_ble.c
 +++ b/esp32/components/muse/muse_ble.c
 @@ -15,6 +15,7 @@
@@ -1269,19 +1204,248 @@
          out->state = MUSE_BLE_CONNECTED;
 --- a/esp32/main/app.c
 +++ b/esp32/main/app.c
-@@ -94,6 +94,8 @@
+@@ -94,6 +94,12 @@
  #if CONFIG_MUSE_ENABLED
  #include "muse_glue.h"
  #include "muse_input.h"
 +#include "sumi_phone.h"
++#include "sumi_ui.h"
 +#include "sumi_wifi.h"
++#include "sumi_muse_pair.h"
++#include "mbedtls/platform_util.h"
++#include "psa/crypto.h"
  // Muse joins Wi-Fi from its own settings, before or without pairing.
  #define WIFI_WITHOUT_PAIRING 1
  #else
-@@ -2411,6 +2413,29 @@
-     return s_none_nearby_us;
+@@ -147,6 +152,10 @@
+ // so this must be a binary semaphore rather than a task-owned FreeRTOS mutex.
+ static SemaphoreHandle_t s_operation_gate = NULL;
+ static SemaphoreHandle_t s_auth_lock = NULL;
++#if CONFIG_MUSE_ENABLED
++static atomic_bool s_phone_refresh_reserved;
++#endif
++
+ static SemaphoreHandle_t s_setup_window_lock = NULL;
+ static int64_t s_last_vm_auth_refresh_attempt_us = 0;
+ // When device credentials were last refused. The refusal backoff runs from
+@@ -782,6 +791,33 @@
+     return token;
  }
  
++#if CONFIG_MUSE_ENABLED
++static void free_muse_pair(sumi_muse_pair_t *pair) {
++    if (pair) mbedtls_platform_zeroize(pair, sizeof(*pair));
++    free(pair);
++}
++
++static bool store_token_pair_unlocked(const char *access_token,
++                                      const char *refresh_token) {
++    sumi_muse_pair_t *next = calloc(1, sizeof(*next));
++    if (!next) return false;
++    bool ok = access_token && *access_token && refresh_token && *refresh_token &&
++        strlcpy(next->access, access_token, sizeof(next->access)) < sizeof(next->access) &&
++        strlcpy(next->refresh, refresh_token, sizeof(next->refresh)) < sizeof(next->refresh) &&
++        config_sumi_muse_store(next);
++    free_muse_pair(next);
++    if (ok) {
++        atomic_store(&s_phone_refresh_reserved, false);
++        // Keep legacy firmware usable after rollback. The blob is authoritative.
++        config_set_str("access_token", access_token);
++        config_set_str("refresh_token", refresh_token);
++        config_erase_key("auth_token");
++        note_access_token_fresh();
++    }
++    return ok;
++}
++
++#else
+ static bool store_token_pair_unlocked(const char *access_token,
+                                       const char *refresh_token) {
+     if (!access_token || !*access_token || !refresh_token || !*refresh_token) {
+@@ -798,6 +834,8 @@
+     }
+     return ok;
+ }
++
++#endif
+
+ static void store_pairing_username_unlocked(const char *username) {
+     if (username && *username) {
+@@ -948,6 +986,12 @@
+     // A mint refused with a 403 keeps its source token, and the heartbeat calls
+     // here every few seconds: wait out the refusal backoff before minting again.
+     access = load_token_unlocked("access_token");
++#if CONFIG_MUSE_ENABLED
++    if (sumi_phone_mode() || app_sumi_muse_refresh_pending()) {
++        ok = access && !access_token_rejected;
++        goto done;
++    }
++#endif
+     if (!access) {
+         ok = !vm_auth_backoff_active_unlocked()
+              && migrate_legacy_auth_token_locked(&revoked);
+@@ -2409,6 +2453,185 @@
+
+ int64_t app_wifi_none_nearby_at(void) {
+     return s_none_nearby_us;
++}
++
++_Static_assert(SUMI_MUSE_ACCESS_MAX + 1 == TOKEN_BUF_BYTES, "Muse access token capacity");
++
++int app_sumi_muse_read_access(char *out, size_t capacity) {
++    if (!s_auth_lock || xSemaphoreTake(s_auth_lock, 0) != pdTRUE) return -1;
++    int size = config_get_str("access_token", out, capacity) ? strlen(out) : 0;
++    auth_lock_give();
++    return size;
++}
++
++bool app_sumi_muse_refresh_pending(void) {
++    return atomic_load(&s_phone_refresh_reserved);
++}
++
++void app_sumi_muse_load_pending(void) {
++    sumi_muse_pair_t *current = malloc(sizeof(*current));
++    if (current && config_sumi_muse_load(current))
++        atomic_store(&s_phone_refresh_reserved, current->reserved != 0);
++    free_muse_pair(current);
++}
++
++static bool auth_try(void) {
++    return s_auth_lock && xSemaphoreTake(s_auth_lock, 0) == pdTRUE;
++}
++
++static bool digest_bytes(const void *bytes, size_t length, uint8_t digest[32]) {
++    size_t size = 0;
++    return psa_crypto_init() == PSA_SUCCESS &&
++           psa_hash_compute(PSA_ALG_SHA_256, bytes, length, digest, 32, &size) == PSA_SUCCESS && size == 32;
++}
++
++// The reserved flag is excluded: reserving an update keeps its base revision.
++static bool muse_revision(const sumi_muse_pair_t *pair, uint8_t digest[32]) {
++    return pair->refresh[0] && digest_bytes(pair, offsetof(sumi_muse_pair_t, reserved), digest);
++}
++
++int app_sumi_muse_replace_access(const char *token, const uint8_t *expected_digest) {
++    if (!auth_try()) return -1;
++    sumi_muse_pair_t *current = malloc(sizeof(*current));
++    int result = -2;
++    uint8_t digest[32];
++    if (current && config_sumi_muse_load(current) && !current->reserved &&
++        digest_bytes(current->access, strlen(current->access), digest)) {
++        result = 0;
++        if (memcmp(digest, expected_digest, sizeof(digest)) == 0) {
++            result = 1;
++            if (strcmp(current->access, token) != 0) {
++                memset(current->access, 0, sizeof(current->access));
++                strlcpy(current->access, token, sizeof(current->access));
++                if (config_sumi_muse_store(current)) note_access_token_fresh();
++                else result = -2;
++            }
++        }
++    }
++    free_muse_pair(current);
++    auth_lock_give();
++    return result;
++}
++
++static bool muse_peer_matches(const char *peer) {
++    char saved[SUMI_MUSE_PEER_CAP];
++    return config_get_str("muse_phone_peer", saved, sizeof(saved)) && strcmp(peer, saved) == 0;
++}
++
++int app_sumi_muse_read_pair(const char *peer, bool allow_enroll, uint8_t *out, size_t capacity) {
++    if (!auth_try()) return -1;
++    sumi_muse_pair_t *current = malloc(sizeof(*current));
++    int result = 0;
++    uint8_t digest[32];
++    char root[256];
++    bool default_api = !config_get_str("api_url_v2", root, sizeof(root)) ||
++                       !strcmp(root, VM_API_DEFAULT_BASE_URL) || !strcmp(root, VM_API_DEFAULT_BASE_URL "/");
++    if (!default_api) result = -4;
++    else if (current && config_sumi_muse_load(current) && muse_revision(current, digest)) {
++        bool known = muse_peer_matches(peer);
++        if (!known && allow_enroll && !current->reserved)
++            known = config_set_str("muse_phone_peer", peer);
++        result = -3;
++        if (known) {
++            const char *id = identity_node_id();
++            size_t access = strlen(current->access), refresh = strlen(current->refresh), device = strlen(id);
++            size_t required = 14 + access + refresh + device;
++            result = 0;
++            if (required <= capacity && device <= 31) {
++                memcpy(out, digest, SUMI_MUSE_REV_BYTES);
++                out[8] = current->reserved;
++                out[9] = (uint8_t)device;
++                out[10] = access & 255;
++                out[11] = access >> 8;
++                out[12] = refresh & 255;
++                out[13] = refresh >> 8;
++                memcpy(out + 14, id, device);
++                memcpy(out + 14 + device, current->access, access);
++                memcpy(out + 14 + device + access, current->refresh, refresh);
++                result = required;
++            }
++        }
++    }
++    free_muse_pair(current);
++    auth_lock_give();
++    return result;
++}
++
++int app_sumi_muse_reserve(const char *peer, const uint8_t *revision, bool reserve) {
++    if (!operation_gate_take(0, "Muse refresh handoff")) return -1;
++    if (!auth_try()) { operation_gate_give(); return -1; }
++    sumi_muse_pair_t *current = malloc(sizeof(*current));
++    uint8_t digest[32];
++    int result = 0;
++    if ((!reserve || sumi_phone_mode()) && muse_peer_matches(peer) && current &&
++        config_sumi_muse_load(current) && muse_revision(current, digest) &&
++        memcmp(digest, revision, SUMI_MUSE_REV_BYTES) == 0) {
++        result = current->reserved == reserve ? (reserve ? -1 : 1) : -2;
++        if (current->reserved != reserve) {
++            current->reserved = reserve;
++            if (config_sumi_muse_store(current)) {
++                atomic_store(&s_phone_refresh_reserved, reserve);
++                result = 1;
++            }
++        }
++    }
++    free_muse_pair(current);
++    auth_lock_give();
++    operation_gate_give();
++    return result;
++}
++
++static bool token_bytes(const uint8_t *data, size_t length) {
++    for (size_t i = 0; i < length; i++)
++        if (data[i] < '!' || data[i] > '~') return false;
++    return true;
++}
++
++int app_sumi_muse_commit(const char *peer, const uint8_t *bytes, size_t length) {
++    if (length < 12) return 0;
++    if (!auth_try()) return -1;
++    sumi_muse_pair_t *current = malloc(sizeof(*current));
++    sumi_muse_pair_t *next = calloc(1, sizeof(*next));
++    uint8_t digest[32];
++    size_t access = bytes[8] | (size_t)bytes[9] << 8;
++    size_t refresh = bytes[10] | (size_t)bytes[11] << 8;
++    int result = 0;
++    if (access >= 10 && refresh && access < SUMI_MUSE_TOKEN_CAP && refresh < SUMI_MUSE_TOKEN_CAP &&
++        length == 12 + access + refresh && token_bytes(bytes + 12, access + refresh) &&
++        current && next && muse_peer_matches(peer) &&
++        config_sumi_muse_load(current) && current->reserved && muse_revision(current, digest) &&
++        memcmp(digest, bytes, SUMI_MUSE_REV_BYTES) == 0) {
++        memcpy(next->access, bytes + 12, access);
++        memcpy(next->refresh, bytes + 12 + access, refresh);
++        result = store_token_pair_unlocked(next->access, next->refresh) ? 1 : -2;
++    }
++    free_muse_pair(next);
++    free_muse_pair(current);
++    auth_lock_give();
++    return result;
++}
++
 +bool app_sumi_wifi_begin(void) {
 +    return operation_gate_take(0, "Sumi Wi-Fi settings");
 +}
@@ -1303,12 +1467,10 @@
 +        if (config_is_provisioned()) xSemaphoreGive(s_muse_joined);
 +    }
 +    operation_gate_give();
-+}
-+
+ }
+
  bool app_wifi_nap(void) {
-     if (!operation_gate_take(0, "Muse Wi-Fi nap")) return false;
-     s_muse_resume_vm = s_muse_resume_vm || noise_ctrl_is_running();
-@@ -2487,6 +2512,9 @@
+@@ -2487,6 +2710,9 @@
          .waiter = xTaskGetCurrentTaskHandle(),
      };
      if (xTaskCreate(hatch_vm_task, "muse_vm", 8192, &req, 4, NULL) != pdPASS) {
@@ -1318,15 +1480,31 @@
          return false;
      }
      ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-@@ -2672,6 +2700,7 @@
+@@ -2599,9 +2825,13 @@
+     (void)arg;
+     int64_t deadline = esp_timer_get_time() + OTA_VERIFY_TIMEOUT_US;
+     while (esp_timer_get_time() < deadline) {
++#if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
++        if (sumi_ui_ready() && sumi_phone_ready()) {
++#else
+         if (noise_ctrl_is_connected()) {
++#endif
+             if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+-                ESP_LOGI(TAG, "OTA image validated (control WS up)");
++                ESP_LOGI(TAG, "OTA image validated");
+                 ota_verify_forget();
+             } else {
+                 ESP_LOGE(TAG, "esp_ota_mark_app_valid_cancel_rollback failed");
+@@ -2672,6 +2902,8 @@
  #endif
      identity_init();
  #if CONFIG_MUSE_ENABLED
 +    sumi_phone_load_mode();
++    app_sumi_muse_load_pending();
      muse_glue_storage_ready();
  #endif
  
-@@ -2816,7 +2845,11 @@
+@@ -2816,7 +3048,11 @@
          config_erase_key("noise_host");
      }
  
@@ -1339,7 +1517,7 @@
      if (setup_complete && !CONFIG_HOMEHUB_WIFI_SSID[0]) {
          char hint_ssid[33] = {0};
          if (config_get_str("ssid", hint_ssid, sizeof(hint_ssid))
-@@ -2932,7 +2965,7 @@
+@@ -2932,7 +3168,7 @@
          ESP_LOGI(TAG, "found provisioned creds in NVS, reconnecting (first: %s)", wifi_ssid);
      }
  
@@ -1418,12 +1596,11 @@
                  ESP_LOGI(TAG, "wifi %s; disconnecting", have ? "off" : "forgotten");
 --- a/esp32/components/muse/muse_voice.c
 +++ b/esp32/components/muse/muse_voice.c
-@@ -30,6 +30,12 @@
+@@ -30,6 +30,11 @@
  #include "sdkconfig.h"
  
  #include "muse_adpcm.h"
 +#include "sumi_ui.h"
-+#include "sumi_noise_test.h"
 +#include "sumi_asr.h"
 +#include "sumi_phone.h"
 +#include "sumi_chat.h"
@@ -1431,7 +1608,7 @@
  #include "muse_audio.h"
  #include "muse_board.h"
  #include "muse_chat.h"
-@@ -46,7 +52,7 @@
+@@ -46,7 +51,7 @@
  static const char *TAG = "muse_voice";
  
  #define MAX_SECS 15
@@ -1440,7 +1617,7 @@
  #define MAX_FRAMES (MUSE_AUDIO_RATE * MAX_SECS)
  #define MIN_HELD_FRAMES (MUSE_AUDIO_RATE * 3 / 10)   /* shorter presses are taps, not speech */
  #if CONFIG_MUSE_BOARD_M5STACK_CARDPUTER_ADV || CONFIG_MUSE_BOARD_AI_PASSPORT
-@@ -79,10 +85,14 @@
+@@ -79,10 +84,14 @@
  static volatile float s_monitor_db = -100.0f;
  static volatile bool s_chirp;
  static volatile bool s_loopback;
@@ -1455,7 +1632,7 @@
  
  muse_voice_view_t muse_voice_call_view(void) { return atomic_load(&s_call_view); }
  bool muse_voice_in_call(void) { return muse_voice_call_view() != MUSE_VOICE_VIEW_NONE; }
-@@ -90,7 +100,7 @@
+@@ -90,7 +99,7 @@
  bool muse_voice_ptt_enabled(void)
  {
  #if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_MUSE_REALTIME_VOICE
@@ -1464,16 +1641,7 @@
  #else
      return false;
  #endif
-@@ -102,7 +112,7 @@
-      * core's capture state and calls end from call_input(), never here. */
-     atomic_store(&s_shutdown, true);
-     int64_t until = esp_timer_get_time() + (int64_t)wait_ms * 1000;
--    while (muse_voice_in_call() && esp_timer_get_time() < until) {
-+    while ((muse_voice_in_call() || sumi_noise_test_active()) && esp_timer_get_time() < until) {
-         vTaskDelay(pdMS_TO_TICKS(20));
-     }
- }
-@@ -197,6 +207,7 @@
+@@ -197,6 +206,7 @@
  /* Call after Muse plays anything: its own sound must not become pre-roll. */
  static void pre_reset(void)
  {
@@ -1481,7 +1649,7 @@
      s_pre_fill = 0;
      s_settle = SETTLE_CHUNKS;
  }
-@@ -326,8 +337,9 @@
+@@ -326,8 +336,9 @@
      muse_state_set_mode(MUSE_MODE_LISTENING);
      muse_state_set_progress(0);
      s_rec_n = s_sent = 0;
@@ -1492,7 +1660,7 @@
          go_live();
      }
      muse_state_set_caption(s_live ? "LISTENING..." : "RECORDING...");
-@@ -351,9 +363,18 @@
+@@ -351,9 +362,18 @@
      }
      size_t pre = n;
      bool released = false;
@@ -1512,7 +1680,7 @@
              break;
          }
          muse_state_set_level(muse_audio_level(s_chunk, MUSE_AUDIO_CHUNK));
-@@ -379,7 +400,7 @@
+@@ -379,7 +399,7 @@
          }
          n += MUSE_AUDIO_CHUNK;
          bool tick = n % (MUSE_AUDIO_CHUNK * 5) == 0;
@@ -1521,7 +1689,7 @@
              ESP_LOGI(TAG, "Muse in reach: streaming the note so far");
              go_live();
          }
-@@ -393,11 +414,14 @@
+@@ -393,11 +413,16 @@
           */
          if (!released && got_event(MUSE_PTT_UP)) {
              released = true;
@@ -1531,6 +1699,8 @@
 +            size_t tail = MUSE_AUDIO_RATE * 12 / 100;
 +            stop_at = n + tail < MAX_FRAMES ? n + tail : MAX_FRAMES;
          }
++        if (s_phone_turn && n >= MIN_HELD_FRAMES && (!released || held_end >= MIN_HELD_FRAMES))
++            sumi_phone_note_progress(s_phone_turn, s_rec, s_rec_n);
      }
      muse_state_set_level(0);
 -    *held = n - pre;
@@ -1538,7 +1708,7 @@
  
      char tail[160];
      int tl = 0;
-@@ -410,6 +434,11 @@
+@@ -410,6 +435,11 @@
      ESP_LOGI(TAG, "recorded %.2fs%s: rms %.1f dBFS, peak %.1f dBFS, floor %.1f dBFS, %d clipped, gain %d dB",
               (double)n / MUSE_AUDIO_RATE, released ? "" : " (max)", rms_db < -100.0f ? -100.0f : rms_db,
               20.0 * log10((st.peak + 1) / 32768.0), st.floor_db, st.clipped, muse_settings_mic_gain());
@@ -1550,7 +1720,7 @@
      return ok;
  }
  
-@@ -419,23 +448,32 @@
+@@ -419,23 +449,32 @@
   * Plays Hatch's reply as it arrives, with its text as the caption. Returns
   * true if interrupted by a new press. *delivered: the VM has the note.
   */
@@ -1586,7 +1756,7 @@
              switch (ev) {
              case MUSE_HATCH_EV_HEARD:
                  if (!speaking && !replied) {
-@@ -475,8 +513,9 @@
+@@ -475,8 +514,9 @@
              muse_state_set_level(0);
              return true;
          }
@@ -1597,7 +1767,7 @@
              if (!speaking) {
                  speaking = true;
                  muse_state_set_mode(MUSE_MODE_SPEAKING);
-@@ -488,7 +527,12 @@
+@@ -488,7 +528,12 @@
          } else if (done) {
              break;
          } else if (speaking) {
@@ -1611,7 +1781,7 @@
              muse_state_set_level(0);
              muse_audio_write(silence, MUSE_AUDIO_CHUNK);
          }
-@@ -500,6 +544,8 @@
+@@ -500,6 +545,8 @@
      muse_state_set_level(0);
      ESP_LOGI(TAG, "muse reply: %.2fs of audio, %.2fs total", (double)played / MUSE_AUDIO_RATE,
               (esp_timer_get_time() - t0) / 1e6);
@@ -1620,7 +1790,7 @@
      if (incomplete[0]) {
          ESP_LOGW(TAG, "muse: %s", incomplete);
          go_idle(incomplete);
-@@ -782,7 +828,7 @@
+@@ -782,7 +829,7 @@
      if (fed == FED && quiet) {
          delivered = wait_delivered();
      } else if (fed == FED) {
@@ -1629,7 +1799,7 @@
      }
      if (fed != FED || quiet) {
          muse_hatch_turn_cancel();   /* asleep, the reply is left for the app */
-@@ -847,9 +893,46 @@
+@@ -847,9 +894,46 @@
   * or if it can't go now it's saved to send later. Returns true if a press
   * interrupted the reply.
   */
@@ -1676,7 +1846,7 @@
  #if HOLD_NOTES
      if (s_rec) {
          bool fed = false, interrupted = false;
-@@ -869,7 +952,7 @@
+@@ -869,7 +953,7 @@
              }
          }
          if (fed) {
@@ -1685,7 +1855,7 @@
          }
          if (delivered || interrupted) {
              drop_rec();
-@@ -881,7 +964,7 @@
+@@ -881,7 +965,7 @@
  #endif
      muse_hatch_turn_end();   /* before the chirp, which takes ~90 ms */
      muse_audio_chirp(0);
@@ -1694,7 +1864,7 @@
  }
  
  /*
-@@ -890,6 +973,16 @@
+@@ -890,6 +974,16 @@
   */
  static bool can_record(void)
  {
@@ -1711,7 +1881,7 @@
      if (!muse_wifi_connected()) {
          muse_wifi_apply();   /* retry now, not after the backoff */
      }
-@@ -913,6 +1006,11 @@
+@@ -913,6 +1007,11 @@
          ESP_LOGE(TAG, "no memory to keep a note");
      }
  #endif
@@ -1723,7 +1893,7 @@
      if (!ready && !s_rec) {
          go_idle(not_ready_reason());
          return false;
-@@ -934,6 +1032,8 @@
+@@ -934,6 +1033,8 @@
      uint32_t input_epoch;
      int64_t give_up, release_until;
      size_t release_frames;
@@ -1732,7 +1902,7 @@
      muse_vc_gate_t gate;
  } call_ui_t;
  
-@@ -964,6 +1064,8 @@
+@@ -964,6 +1065,8 @@
              finish_release(c);   /* old press closes before the new one opens */
              ++c->press;
              c->held = true;
@@ -1741,7 +1911,7 @@
              muse_voice_call_set_talking(true);
              muse_vc_gate_init(&c->gate, false, 0);
              c->awaiting = false;
-@@ -1010,7 +1112,8 @@
+@@ -1010,7 +1113,8 @@
      static int16_t out[MUSE_AUDIO_CHUNK];
      static const int16_t silence[MUSE_AUDIO_CHUNK];
      char text[96] = "";
@@ -1751,7 +1921,7 @@
      muse_vc_gate_init(&c.gate, false, ptt ? 0 : CALL_TAIL_US);
      bool ended = false;
      atomic_store(&s_ptt_call, ptt);
-@@ -1082,6 +1185,13 @@
+@@ -1082,6 +1186,13 @@
          bool mic = captured && !c.hung_up && !c.server_hold && c.input_epoch == muse_input_call_epoch();
          if (ptt) mic = mic && capture_window && (c.held || c.release_until) && press == c.press && status.capture;
          else mic = mic && c.live && muse_vc_gate_mic_open(&c.gate, now);
@@ -1765,7 +1935,7 @@
          if (mic) mic = muse_voice_call_audio(s_chunk, MUSE_AUDIO_CHUNK);
          if (ptt && mic) {
              c.awaiting = true;
-@@ -1110,7 +1220,7 @@
+@@ -1110,7 +1221,7 @@
          muse_voice_view_t view = c.hung_up ? MUSE_VOICE_VIEW_ENDING :
              !c.live ? MUSE_VOICE_VIEW_CONNECTING :
              c.server_hold ? MUSE_VOICE_VIEW_THINKING :
@@ -1774,7 +1944,7 @@
              speaking ? MUSE_VOICE_VIEW_SPEAKING :
              !ptt ? (muse_voice_call_working() ? MUSE_VOICE_VIEW_WORKING : MUSE_VOICE_VIEW_LISTENING) :
              c.release_until || c.awaiting || status.sending ? MUSE_VOICE_VIEW_THINKING :
-@@ -1160,11 +1270,56 @@
+@@ -1160,11 +1271,65 @@
  }
  #endif
  
@@ -1818,20 +1988,29 @@
      bool pending_down = false;
      muse_audio_selftest();
      for (;;) {
-+        if (sumi_noise_test_active()) {
-+            set_resting(false);
-+            bool waiting = sumi_noise_test_step(atomic_load(&s_shutdown));
-+            muse_input_event_t ignored;
-+            while (xQueueReceive(s_queue, &ignored, 0) == pdTRUE)
-+                muse_input_clear_call_pending(ignored.mark);
-+            pending_down = false;
-+            pre_reset();
-+            if (waiting) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
++        muse_input_event_t head;
++        if (!pending_down && !atomic_load(&s_shutdown) && !sumi_ui_settings_open() &&
++            (xQueuePeek(s_queue, &head, 0) != pdTRUE || head.type != MUSE_PTT_DOWN)) {
++            uint32_t push = sumi_phone_take_push();
++            if (push) {
++                muse_state_set_asleep(false);
++                set_resting(false);
++                s_phone_barge_in = false;
++                const char *error = sumi_phone_play_push(push, phone_interrupted);
++                pending_down = s_phone_barge_in;
++                muse_state_set_level(0);
++                pre_reset();
++                if (!pending_down) {
++                    if (!error) muse_state_make_happy();
++                    go_idle(error ? error : "");
++                }
++                continue;
++            }
 +        }
          bool wake = false;
          if (!pending_down) {
              muse_input_event_t ev;
-@@ -1174,7 +1329,7 @@
+@@ -1174,7 +1339,7 @@
  #if HOLD_NOTES
              /* A press goes first: send_held() leaves it queued and returns
               * without backing off, so retrying before it's read would spin. */
@@ -1840,7 +2019,7 @@
                  set_resting(false);   /* full power while it goes, even asleep */
                  muse_wifi_power(MUSE_WIFI_FULL);
                  pending_down = send_held(asleep);
-@@ -1189,7 +1344,8 @@
+@@ -1189,7 +1354,8 @@
              set_resting(rest);
              /* On battery Wi-Fi rests with the codecs, and between turns dozes
               * between beacons as xiaozhi's idle does; a press wakes it fully. */
@@ -1850,7 +2029,7 @@
              if (rest) {
                  /* Wait for waking, USB power or a bench request without
                   * polling (the timeout is only a backstop, or a look for
-@@ -1217,6 +1373,10 @@
+@@ -1217,6 +1383,10 @@
                  muse_audio_loopback_test(muse_settings_volume());
                  pre_reset();
              }
@@ -1861,7 +2040,7 @@
              /* The 20 ms read paces this loop. */
              idle_capture();
              if (xQueueReceive(s_queue, &ev, 0) != pdTRUE) {
-@@ -1242,7 +1402,7 @@
+@@ -1242,7 +1412,7 @@
              muse_input_clear_call_pending(s_press_mark);
              continue;
          }
@@ -1870,12 +2049,12 @@
  #if CONFIG_MUSE_REALTIME_VOICE
          if (ptt) {
              pending_down = false;
-@@ -1265,6 +1425,15 @@
+@@ -1265,6 +1435,15 @@
          char why[96];
          bool ok = record(pending_down, &held, why, sizeof(why));
          pending_down = false;
 +        if (s_phone_turn && (!ok || short_press(held) || atomic_load(&s_shutdown))) {
-+            sumi_phone_end(s_phone_turn, false);
++            sumi_phone_end(s_phone_turn, true);
 +            s_phone_turn = 0;
 +            drop_rec();
 +            pre_reset();
@@ -1886,7 +2065,7 @@
          if (short_press(held) && !wake) {
              muse_hatch_turn_cancel();
              drop_rec();
-@@ -1285,7 +1454,7 @@
+@@ -1285,7 +1464,7 @@
              go_idle(why);   /* Hatch failed it while recording */
              continue;
          }
@@ -1895,3 +2074,121 @@
          pre_reset();
          if (!pending_down && muse_state_mode(NULL) != MUSE_MODE_IDLE) {
              muse_state_make_happy();
+--- a/esp32/main/config_store.c
++++ b/esp32/main/config_store.c
+@@ -15,6 +15,14 @@
+  */
+
+ #include "config_store.h"
++#ifdef ESP_PLATFORM
++#include "sdkconfig.h"
++#endif
++#if CONFIG_MUSE_ENABLED
++#include "sumi_muse_pair.h"
++#include <stdlib.h>
++#include "mbedtls/platform_util.h"
++#endif
+
+ #include <string.h>
+
+@@ -27,6 +35,9 @@
+ static const char *TAG = "link.config";
+ static const char *NS = "homehub";
+ static const char *SETUP_COMPLETE_KEY = "setup_complete";
++#if CONFIG_MUSE_ENABLED
++static const char *const MUSE_PAIR_KEY = "muse_token_pair";
++#endif
+
+ static bool nvs_encryption_possible(void) {
+ #ifndef CONFIG_NVS_ENCRYPTION
+@@ -64,7 +75,54 @@
+     ESP_ERROR_CHECK(err);
+ }
+
++#if CONFIG_MUSE_ENABLED
++static bool read_str(nvs_handle_t h, const char *key, char *out, size_t capacity) {
++    return nvs_get_str(h, key, out, &capacity) == ESP_OK;
++}
++
++bool config_sumi_muse_load(sumi_muse_pair_t *pair) {
++    memset(pair, 0, sizeof(*pair));
++    nvs_handle_t h;
++    if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) return false;
++    size_t size = sizeof(*pair);
++    esp_err_t err = nvs_get_blob(h, MUSE_PAIR_KEY, pair, &size);
++    bool ok = false;
++    if (err == ESP_ERR_NVS_NOT_FOUND) {
++        ok = read_str(h, "access_token", pair->access, sizeof(pair->access));
++        read_str(h, "refresh_token", pair->refresh, sizeof(pair->refresh));
++    } else if (err == ESP_OK && size == sizeof(*pair)) {
++        ok = memchr(pair->access, 0, sizeof(pair->access)) &&
++             memchr(pair->refresh, 0, sizeof(pair->refresh)) && pair->reserved <= 1;
++    }
++    nvs_close(h);
++    return ok && pair->access[0];
++}
++
++bool config_sumi_muse_store(const sumi_muse_pair_t *pair) {
++    nvs_handle_t h;
++    if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return false;
++    esp_err_t err = nvs_set_blob(h, MUSE_PAIR_KEY, pair, sizeof(*pair));
++    if (err == ESP_OK) err = nvs_commit(h);
++    nvs_close(h);
++    return err == ESP_OK;
++}
++
++#endif
+ bool config_get_str(const char *key, char *out, size_t buf_size) {
++#if CONFIG_MUSE_ENABLED
++    bool access = strcmp(key, "access_token") == 0;
++    bool refresh = strcmp(key, "refresh_token") == 0;
++    if (access || refresh) {
++        sumi_muse_pair_t *pair = malloc(sizeof(*pair));
++        if (!pair) return false;
++        bool ok = config_sumi_muse_load(pair);
++        const char *value = access ? pair->access : pair->refresh;
++        ok = ok && *value && strlcpy(out, value, buf_size) < buf_size;
++        mbedtls_platform_zeroize(pair, sizeof(*pair));
++        free(pair);
++        return ok;
++    }
++#endif
+     nvs_handle_t h;
+     if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) {
+         return false;
+@@ -156,6 +214,10 @@
+         "api_url",
+         "api_url_v2",
+         "noise_host",
++#if CONFIG_MUSE_ENABLED
++        "muse_token_pair",
++        "muse_phone_peer",
++#endif
+         "access_token",
+         "refresh_token",
+         "auth_token",
+@@ -178,6 +240,10 @@
+         "api_url",
+         "api_url_v2",
+         "noise_host",
++#if CONFIG_MUSE_ENABLED
++        "muse_token_pair",
++        "muse_phone_peer",
++#endif
+         "access_token",
+         "refresh_token",
+         "auth_token",
+@@ -200,6 +266,13 @@
+         return false;
+     }
+     size_t len = 0;
++#if CONFIG_MUSE_ENABLED
++    if (nvs_get_blob(h, MUSE_PAIR_KEY, NULL, &len) == ESP_OK && len == sizeof(sumi_muse_pair_t)) {
++        nvs_close(h);
++        return true;
++    }
++    len = 0;
++#endif
+     esp_err_t err = nvs_get_str(h, "access_token", NULL, &len);
+     if (err != ESP_OK || len <= 1) {
+         len = 0;

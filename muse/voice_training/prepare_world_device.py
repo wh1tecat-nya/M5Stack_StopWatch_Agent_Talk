@@ -200,13 +200,13 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -O2 -ffp-contract=off -fno-fast-
 }
 
 ''' + marker)
-        marker = '    for (;;) {\n        if (sumi_noise_test_active()) {'
+        marker = '    for (;;) {\n        muse_input_event_t head;'
         if text.count(marker) != 1:
             raise ValueError('Voice loop layout changed')
         text = text.replace(marker, '''    for (;;) {
         if (sumi_world_bench_audio_active()) {
             set_resting(false);
-            bool stop = atomic_load(&s_shutdown) || sumi_noise_test_active();
+            bool stop = atomic_load(&s_shutdown);
             muse_input_event_t ignored;
             while (xQueueReceive(s_queue, &ignored, 0) == pdTRUE) {
                 muse_input_clear_call_pending(ignored.mark);
@@ -220,9 +220,9 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -O2 -ffp-contract=off -fno-fast-
             vTaskDelay(1);
             continue;
         }
-        if (sumi_noise_test_active()) {''')
-        text = text.replace('muse_voice_in_call() || sumi_noise_test_active()',
-                            'muse_voice_in_call() || sumi_noise_test_active() || sumi_world_bench_audio_active()')
+        muse_input_event_t head;''')
+        text = text.replace('while (muse_voice_in_call() && esp_timer_get_time() < until)',
+                            'while ((muse_voice_in_call() || sumi_world_bench_audio_active()) && esp_timer_get_time() < until)')
         write_changed(voice, ('#include "sumi_world_bench.h"\n' + text).encode())
 
         console = esp / 'components/muse/muse_input.c'

@@ -55,7 +55,7 @@ import java.util.function.IntConsumer;
 public final class MainActivity extends Activity {
     private static final int INK = 0xff172822, GREEN = 0xff20644f, MUTED = 0xff506157;
     private static final int PAPER = 0xfff4f6f2, CARD = Color.WHITE, PALE = 0xffdef0e4, LINE = 0xffd6e2d8;
-    private static final int BLE = 1, ENABLE = 2, MIC = 3, MODEL = 4, VOICE = 5, MUSE = 6, NOTIFY = 7;
+    private static final int BLE = 1, ENABLE = 2, MIC = 3, MODEL = 4, VOICE = 5, MUSE = 6, NOTIFY = 7, FIRMWARE = 8;
     private static final String[] TABS = {"接続", "会話", "ログ"};
     private static final String[] LOG_FILTERS = {"すべて", "BLE", "OpenAI", "Android", "Muse", "Irodori"};
     private static final String[] DEVICE_SECTIONS = {"会話と音量", "表示", "電源とWi-Fi"};
@@ -68,11 +68,20 @@ public final class MainActivity extends Activity {
     private FrameLayout content;
     private TextView device, connectionState, connectionDetail, assetStatus, openaiStatus, museStatus, modelStatus, referenceStatus;
     private View connectionDetails;
+    private TextView firmwareStatus;
+    private Button updateFirmware;
     private SegmentedBar navigation;
     private SpeechBackend.Task museCheck;
     private boolean choosingDevice;
     private LinearLayout nearby, deviceSettings;
-    private Button search, checkMuseButton;
+    private Button search, checkMuseButton, pullMuseButton, pushMuseButton;
+    private TextView museSyncDetail;
+    private LinearLayout catalogRows;
+    private Button refreshChats;
+    private TextView chatSyncStatus, chatActionStatus;
+    private ChatCatalog visibleCatalog;
+    private String visibleChat;
+    private boolean visibleCanSelect;
     private Switch autoConnect;
     private DeviceSettings.Snapshot visibleSettings;
     private List<ConversationService.Nearby> visibleNearby = List.of();
@@ -285,6 +294,10 @@ public final class MainActivity extends Activity {
         sectionSize.topMargin = dp(15);
         body.addView(sections, sectionSize);
         deviceSettings = card(body, CARD);
+        updateFirmware = button("C152ファームウェアを更新", false, () -> pick(FIRMWARE));
+        row(body, updateFirmware, 14);
+        firmwareStatus = text("", 13, MUTED);
+        row(body, firmwareStatus, 4);
         visibleSettings = null;
         visibleNearby = null;
         visibleSettingsBusy = false;
@@ -303,6 +316,10 @@ public final class MainActivity extends Activity {
             return;
         }
         for (int key : DEVICE_FIELDS[deviceSection]) {
+            if (key == 1) {
+                row(deviceSettings, button("会話先を選ぶ", false, () -> showTab(1)), 7);
+                continue;
+            }
             var field = DeviceSettings.FIELDS[key];
             int value = snapshot.values()[key];
             if (field.options() != null && field.options().length <= 4) {
@@ -370,6 +387,20 @@ public final class MainActivity extends Activity {
 
     private void conversationScreen() {
         var body = page();
+        var catalog = card(body, CARD);
+        label(catalog, "チャット一覧");
+        chatSyncStatus = text("", 13, MUTED);
+        row(catalog, chatSyncStatus, 3);
+        refreshChats = button("チャット一覧を更新", true, () -> {
+            if (service != null) service.refreshChatCatalog();
+        });
+        row(catalog, refreshChats, 8);
+        chatActionStatus = text("", 13, MUTED);
+        row(catalog, chatActionStatus, 3);
+        row(catalog, text("削除は次の更新で復帰。非表示は更新後も維持", 13, MUTED), 7);
+        catalogRows = vertical();
+        row(catalog, catalogRows, 4);
+        visibleCatalog = null;
         var engines = card(body, CARD);
         label(engines, "音声認識");
         if (service != null) providers(engines, "asr", phone.asr(), service.asrOptions());
@@ -392,6 +423,17 @@ public final class MainActivity extends Activity {
         var muse = card(body, CARD);
         museStatus = text("", 13, MUTED);
         var museFields = disclosure(muse, "Muse", museStatus, !phone.hasCredential("muse"));
+        row(museFields, text("BLEでは認証を自動同期。初回はC152で「Muse認証の同期を許可」", 13, MUTED), 0);
+        pullMuseButton = button("C152の認証を取り込む", true, () -> {
+            if (service != null) service.syncMuse(false);
+        });
+        pushMuseButton = button("スマホの認証をC152へ送る", false, () -> {
+            if (service != null) service.syncMuse(true);
+        });
+        row(museFields, pullMuseButton, 6);
+        row(museFields, pushMuseButton, 6);
+        museSyncDetail = text("", 14, MUTED);
+        row(museFields, museSyncDetail, 3);
         var check = button("接続を確認", false, () -> {});
         checkMuseButton = check;
         var checkResult = text("", 14, MUTED);
@@ -427,6 +469,57 @@ public final class MainActivity extends Activity {
         row(fileFields, button("すみの参照を選ぶ", false, () -> pick(VOICE)), 6);
         assetStatus = text("", 14, GREEN);
         row(files, assetStatus, 6);
+    }
+
+    private void renderChatCatalog() {
+        var catalog = service == null ? phone.chatCatalog() : service.chatCatalog();
+        String selected = service == null ? null : service.selectedChatId();
+        boolean choosing = service != null && service.canSelectChats();
+        boolean refreshing = service != null && service.catalogRefreshing();
+        refreshChats.setEnabled(service != null && service.canRefreshCatalog());
+        refreshChats.setText(refreshing ? "チャット一覧を取得中…" : "チャット一覧を更新");
+        chatSyncStatus.setText(service == null ? "BLE接続時にC152と自動同期" : service.catalogLinkStatus());
+        chatActionStatus.setText(service == null ? "" : service.catalogStatus());
+        chatActionStatus.setVisibility(chatActionStatus.length() == 0 ? View.GONE : View.VISIBLE);
+        if (catalog.equals(visibleCatalog) && java.util.Objects.equals(selected, visibleChat) &&
+                choosing == visibleCanSelect) return;
+        visibleCatalog = catalog;
+        visibleChat = selected;
+        visibleCanSelect = choosing;
+        catalogRows.removeAllViews();
+        for (ChatCatalog.Chat chat : catalog.visible()) {
+            boolean active = chat.id().equals(selected);
+            var select = button(active ? "● " + chat.title() : chat.title(), active, () -> {
+                if (service != null) service.selectChat(chat.id());
+            });
+            select.setEnabled(choosing && !active);
+            row(catalogRows, select, 6);
+            if (chat.id().isEmpty()) continue;
+            var actions = new LinearLayout(this);
+            actions.setGravity(Gravity.END);
+            var remove = button("削除", false, () -> {
+                if (service != null) service.editChat(chat.id(), false);
+            });
+            var hide = button("非表示", false, () -> {
+                if (service != null) service.editChat(chat.id(), true);
+            });
+            remove.setEnabled(service != null);
+            hide.setEnabled(service != null);
+            actions.addView(remove);
+            actions.addView(hide);
+            row(catalogRows, actions, 0);
+        }
+        if (!catalog.hidden().isEmpty()) {
+            var summary = text(catalog.hidden().size() + "件", 13, MUTED);
+            var hidden = disclosure(catalogRows, "非表示のチャット", summary, false);
+            catalog.hidden().forEach((id, title) -> {
+                var restore = button(title + " を再表示", false, () -> {
+                    if (service != null) service.showChat(id);
+                });
+                restore.setEnabled(service != null);
+                row(hidden, restore, 4);
+            });
+        }
     }
 
     private LinearLayout disclosure(LinearLayout card, String name, TextView summary, boolean initiallyExpanded) {
@@ -623,11 +716,14 @@ public final class MainActivity extends Activity {
             boolean registered = !phone.deviceAddress().isEmpty();
             connectionDetails.setVisibility(!registered || choosingDevice ? View.VISIBLE : View.GONE);
             updatingSwitch = true;
-            autoConnect.setEnabled(registered && service != null);
+            autoConnect.setEnabled(registered && service != null && !service.updatingFirmware());
             autoConnect.setChecked(registered && phone.autoConnect());
             updatingSwitch = false;
             search.setEnabled(service != null && !service.searching());
             search.setText(service != null && service.searching() ? "検索中…" : registered ? "別のStopWatchを探す" : "StopWatchを探す");
+            updateFirmware.setEnabled(service != null && service.canUpdateFirmware());
+            firmwareStatus.setText(service == null ? "" : service.firmwareStatus());
+            firmwareStatus.setVisibility(firmwareStatus.length() == 0 ? View.GONE : View.VISIBLE);
             var found = service == null ? List.<ConversationService.Nearby>of() : service.nearby();
             if (!found.equals(visibleNearby)) {
                 nearby.removeAllViews();
@@ -637,9 +733,17 @@ public final class MainActivity extends Activity {
             }
             renderDeviceSettings();
         } else if (tab == 1) {
+            renderChatCatalog();
             openaiStatus.setText(phone.hasCredential("openai") ? "APIキーを保存済み" : "APIキー未設定");
-            museStatus.setText(phone.hasCredential("muse") ? "端末認証情報を保存済み" : "端末認証未設定");
-            checkMuseButton.setEnabled(service != null && museCheck == null && phone.hasCredential("muse"));
+            boolean managed = service != null && service.museManaged();
+            boolean saved = phone.hasCredential("muse");
+            museStatus.setText(managed ? "C152と自動同期" : saved ? "端末認証情報を保存済み" : "端末認証未設定");
+            boolean syncReady = service != null && service.museSyncReady();
+            pullMuseButton.setEnabled(syncReady);
+            pushMuseButton.setEnabled(syncReady && saved && !managed);
+            museSyncDetail.setText(service == null ? "" : service.museSyncStatus());
+            museSyncDetail.setVisibility(museSyncDetail.length() == 0 ? View.GONE : View.VISIBLE);
+            checkMuseButton.setEnabled(service != null && museCheck == null && (managed || saved));
             var installed = IrodoriModels.bySize(new File(getFilesDir(), IrodoriTts.MODEL).length());
             modelStatus.setText(installed == null ? "モデル未設定" : installed.name());
             var voice = installed != null && installed.anime() ? IrodoriTts.ANIME_VOICE : IrodoriTts.VOICE;
@@ -679,6 +783,7 @@ public final class MainActivity extends Activity {
             if (!selected.isEmpty()) service.importModel(selected);
         } else if (request == VOICE && data.getData() != null) service.importVoice(data.getData());
         else if (request == MUSE && data.getData() != null) service.importMuse(data.getData());
+        else if (request == FIRMWARE && data.getData() != null) service.importFirmware(data.getData());
     }
 
     private RadioGroup options(String title, String[] labels) {

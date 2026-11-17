@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 void sumi_ui_init(void);
+bool sumi_ui_ready(void);
 void sumi_ui_prepare(void);
 bool sumi_ui_tick(void);
 int sumi_ui_brightness(int fallback);

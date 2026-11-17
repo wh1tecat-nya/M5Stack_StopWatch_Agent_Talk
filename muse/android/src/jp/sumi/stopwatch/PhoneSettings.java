@@ -23,6 +23,22 @@ final class PhoneSettings {
         return expected.equals(museCredential()) && saveMuseCredential(replacement);
     }
     synchronized boolean saveMuseCredential(String value) { return secrets.save("muse", value); }
+    String museRotation(String watch) { return secrets.read("muse_rotation_" + watch); }
+    boolean saveMuseRotation(String watch, String value) { return secrets.save("muse_rotation_" + watch, value); }
+    String musePair(String watch) { return secrets.read("muse_pair_" + watch); }
+    boolean saveMusePair(String watch, String value) { return secrets.save("muse_pair_" + watch, value); }
+
+    ChatCatalog chatCatalog() {
+        String value = preferences.getString("muse_chat_catalog", "");
+        if (value.isEmpty()) return ChatCatalog.DEFAULT;
+        try { return ChatCatalog.read(value); }
+        catch (org.json.JSONException e) { return ChatCatalog.DEFAULT; }
+    }
+
+    boolean saveChatCatalog(ChatCatalog catalog) {
+        try { return preferences.edit().putString("muse_chat_catalog", catalog.encode()).commit(); }
+        catch (org.json.JSONException e) { return false; }
+    }
     boolean echo() { return preferences.getBoolean("echo", false); }
     void echo(boolean enabled) { preferences.edit().putBoolean("echo", enabled).apply(); }
 

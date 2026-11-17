@@ -10,6 +10,10 @@ static time_t test_time(time_t *out) { if(out)*out=clock_utc; return clock_utc; 
 #include "../overlay/sumi_ui.c"
 #undef time
 void sumi_clock_poll(bool connected) { (void)connected; }
+const esp_app_desc_t *esp_app_get_description(void) {
+    static const esp_app_desc_t desc = {.version = "0.1.6-test"};
+    return &desc;
+}
 
 
 static uint32_t clock_ms;
@@ -24,7 +28,7 @@ static const char *wifi_operation;
 static char wifi_target[MUSE_SSID_MAX + 1];
 static int battery_pct=75, pokes;
 static bool charge_fail;
-static bool charger_enabled=true, charger_fail, usb_power=true, linked=true;
+static bool usb_power=true, linked=true;
 int64_t esp_timer_get_time(void) { return (int64_t)clock_ms * 1000; }
 int nvs_set_i32(int a,const char*b,int c){(void)a;if(save_fail)return -1;if(!strcmp(b,"charge_ma"))saved_charge=c;if(!strcmp(b,"wearable"))saved_wearable=c;return 0;}
 int nvs_get_i32(int a,const char*b,int*c){(void)a;if(!strcmp(b,"wearable")&&saved_wearable>=0){*c=saved_wearable;return 0;}if(!strcmp(b,"charge_ma")&&saved_charge){*c=saved_charge;return 0;}return -1;}
@@ -66,6 +70,7 @@ bool sumi_phone_ready(void){return phone_ready;}
 bool sumi_phone_set_mode(bool enabled){if(save_fail)return false;phone_mode=enabled;return true;}
 void sumi_phone_apply_setting(void){}
 void sumi_phone_open_settings(void){}
+void sumi_phone_allow_muse_sync(void){}
 bool sumi_wifi_request(void){wifi_operation="add";wifi_setting=true;return true;}
 bool sumi_wifi_select(const char *ssid){wifi_operation="select";strlcpy(wifi_target,ssid,sizeof(wifi_target));wifi_setting=true;return true;}
 bool sumi_wifi_forget(const char *ssid){wifi_operation="forget";strlcpy(wifi_target,ssid,sizeof(wifi_target));wifi_setting=true;return true;}
@@ -80,22 +85,11 @@ void sumi_mic_test_request(void){}
 bool sumi_mic_test_active(void){return false;}
 bool sumi_charge_set_current(int ma){if(charge_fail){charge=0;return false;}charge=ma;return true;}
 int sumi_charge_current(void){return charge;}
-bool sumi_charge_enable(bool on){if(charger_fail)return false;charger_enabled=on;return true;}
-int sumi_charge_enabled(void){return charger_enabled;}
-static sumi_noise_state_t noise_state;
-bool sumi_noise_test_active(void){return noise_state==SUMI_NOISE_QUEUED || noise_state==SUMI_NOISE_PAUSED;}
-sumi_noise_state_t sumi_noise_test_state(void){return noise_state;}
-bool sumi_noise_test_request(void){noise_state=SUMI_NOISE_QUEUED;return true;}
-void sumi_noise_test_cancel(void){noise_state=SUMI_NOISE_DONE;}
 static bool asr_key, asr_on;
 void sumi_asr_init(void){}
 bool sumi_asr_enabled(void){return asr_on;}
 bool sumi_asr_configured(void){return asr_key;}
 bool sumi_asr_select(bool on){if(on&&!asr_key)return false;asr_on=on;return true;}
-static int panel_state;
-void sumi_panel_test_request(void){panel_state=1;}
-bool sumi_panel_test_active(void){return panel_state>=1&&panel_state<=3;}
-int sumi_panel_test_state(void){return panel_state;}
 static int rate=80;
 int sumi_tts_rate(void){return rate;}
 void sumi_tts_set_rate(int v){rate=v;}
@@ -148,6 +142,14 @@ int main(void){
     tick(60000);assert(screen==SUMI_DIM);tick(60000);assert(sleep_state);
     muse_state_set_asleep(false);sumi_ui_wake();tick(1);assert(screen==SUMI_BADGE && !menu);
     sumi_ui_toggle_settings();tick(1);assert(menu);picture("settings");
+    lv_obj_t *settings_list = lv_obj_get_child(panel, 1);
+    lv_obj_t *system_info = lv_obj_get_child(settings_list, -1);
+    assert(!strcmp(lv_label_get_text(lv_obj_get_child(system_info, 0)), "システム情報"));
+    lv_obj_send_event(system_info, LV_EVENT_CLICKED, NULL);
+    assert(page == SYSTEM_INFO);
+    assert(!strcmp(lv_label_get_text(lv_obj_get_child(panel, 2)), "0.1.6-test"));
+    tick(1);picture("system-info");
+    lv_obj_send_event(back, LV_EVENT_CLICKED, NULL);assert(page == -1);
     show_page(0);tick(1);picture("volume");
     show_page(6);tick(1);picture("voice");
     show_page(10);tick(1);picture("speech-speed");
@@ -157,8 +159,10 @@ int main(void){
     show_page(11);tick(1);picture("mic-gain");
     show_page(12);tick(1);picture("chat-selection");
     assert(sumi_chat_selected()==1);
-    lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==0);
-    show_page(12);lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==1);
+    lv_obj_t *chat_choices=lv_obj_get_child(panel,1);
+    lv_obj_send_event(lv_obj_get_child(chat_choices,0),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==0);
+    show_page(12);chat_choices=lv_obj_get_child(panel,1);
+    lv_obj_send_event(lv_obj_get_child(chat_choices,1),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==1);
     show_page(19);tick(1);picture("send-settings-default-on");
     assert(sumi_chat_wearable() && saved_wearable==-1);
     lv_obj_send_event(lv_obj_get_child(panel,3),LV_EVENT_CLICKED,NULL);
@@ -176,32 +180,10 @@ int main(void){
     charge_fail=true;lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);
     assert(charge==0 && saved_charge==185);tick(1);picture("charge-error");
     charge_fail=false;
-    show_page(15);tick(1);picture("charge-test-ready");
-    usb_power=false;lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);
-    assert(charger_enabled && !charge_restore_pending);usb_power=true;
-    lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);
-    assert(!charger_enabled && charge_restore_pending);tick(1);picture("charge-test-paused");
-    tick(19000);assert(!charger_enabled);
-    linked=false;charger_fail=true;tick(1000);assert(charge_restore_pending && !charger_enabled);
-    charger_fail=false;tick(1000);assert(!charge_restore_pending && charger_enabled);
-    linked=true;tick(1);picture("charge-test-restored");
-    lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(!charger_enabled);
-    lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);assert(charger_enabled && !charge_restore_pending);
-    show_page(16);tick(1);picture("audio-rail-ready");
-    usb_power=false;lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(noise_state==SUMI_NOISE_IDLE);
-    usb_power=true;call=true;lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(noise_state==SUMI_NOISE_IDLE);
-    call=false;lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(noise_state==SUMI_NOISE_QUEUED);
-    noise_state=SUMI_NOISE_PAUSED;tick(1);picture("audio-rail-paused");
-    show_page(6);notes=false;lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);assert(!notes);
-    show_page(16);lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);tick(1);picture("audio-rail-restored");
-    noise_state=SUMI_NOISE_RETRY;tick(1);picture("audio-rail-retry");noise_state=SUMI_NOISE_DONE;
     show_page(17);tick(1);picture("asr-unconfigured");
     lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(!asr_on);
     asr_key=true;lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(asr_on);tick(1);picture("asr-openai");
     lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);assert(!asr_on);
-    show_page(18);tick(1);picture("panel-test-ready");
-    lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);assert(panel_state==1);
-    panel_state=4;tick(1);picture("panel-test-restored");
     show_page(3);tick(1);picture("display-time");
     show_page(6);
     call=true; notes=false;

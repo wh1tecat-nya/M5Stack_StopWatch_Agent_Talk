@@ -63,27 +63,29 @@ static void ack(const char *session, bool thread) {
 }
 int main(){
     sumi_chat_select(1);s_turn.phase=P_WAIT_REPLY;s_turn.text=true;
-    strlcpy(s_turn.session_id,sumi_chat_id(),sizeof(s_turn.session_id));
+    char side[SUMI_CHAT_ID_BYTES+1];sumi_chat_id(side);
+    assert(!strcmp(side,SUMI_CHAT_LEGACY_ID));
+    sumi_chat_id(s_turn.session_id);
     event("main-chat",500,"Wrong main context");event(nullptr,501,"Unscoped");
     assert(!shown && !s_turn.nmsgs && !s_last_seq);
     ack("main-chat",false);assert(failed==1 && !sent);
-    s_turn.phase=P_WAIT_REPLY;ack(sumi_chat_id(),true);assert(sent==1 && s_turn.acked);
-    event(sumi_chat_id(),1,"Correct side chat");assert(shown==1 && s_turn.nmsgs==1);
-    event(sumi_chat_id(),1,"Duplicate");assert(shown==1);
+    s_turn.phase=P_WAIT_REPLY;ack(side,true);assert(sent==1 && s_turn.acked);
+    event(side,1,"Correct side chat");assert(shown==1 && s_turn.nmsgs==1);
+    event(side,1,"Duplicate");assert(shown==1);
     s_turn=turn_t{};s_turn.phase=P_WAIT_REPLY;s_turn.text=true;
-    strlcpy(s_turn.session_id,sumi_chat_id(),sizeof(s_turn.session_id));
-    ack(sumi_chat_id(),true);event(sumi_chat_id(),2,"Second turn");assert(shown==2);
+    sumi_chat_id(s_turn.session_id);
+    ack(side,true);event(side,2,"Second turn");assert(shown==2);
     cJSON *parent=cJSON_Parse("{\"reply_to_message_id\":\"self-reply\"}");
     assert(bind_msg("self-reply",parent)>=0);cJSON_Delete(parent);
     parent=cJSON_Parse("{\"reply_to_message_id\":\"unrelated\"}");
     assert(bind_msg("alien",parent)<0);cJSON_Delete(parent);
     uint8_t wav[44];s_turn.note=wav;assert(open_note());
     strcat(header,MUSE_HATCH_NOTE_TAIL);cJSON *body=cJSON_Parse(header);assert(body);
-    assert(!strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(body,"session_id")),sumi_chat_id()));
+    assert(!strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(body,"session_id")),side));
     assert(!strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(body,"output_modality")),"text"));cJSON_Delete(body);
     for (int chat=0;chat<2;++chat) for(int wearable=0;wearable<2;++wearable) {
         sumi_chat_select(chat);sumi_chat_set_wearable(wearable);s_turn.wearable=sumi_chat_wearable();
-        strlcpy(s_turn.session_id,sumi_chat_id(),sizeof(s_turn.session_id));
+        sumi_chat_id(s_turn.session_id);
         assert(open_note());strcat(header,MUSE_HATCH_NOTE_TAIL);body=cJSON_Parse(header);assert(body);
         assert((cJSON_GetObjectItem(body,"session_id")!=nullptr)==(chat!=0));
         assert((cJSON_GetObjectItem(body,"device")!=nullptr)==(wearable!=0));
@@ -97,6 +99,21 @@ int main(){
         assert(!strcmp(cJSON_GetStringValue(cJSON_GetObjectItem(body,"message")),"M5Stackからの会話テスト"));
         cJSON_Delete(body);
     }
+    // A refresh can reorder rows, while selection stays pinned to the UUID.
+    const uint8_t catalog[] = "\1\2" "11111111-1111-4111-8111-111111111111" "\4Test"
+                                      SUMI_CHAT_LEGACY_ID "\6Legacy";
+    assert(sumi_chat_selected()==1);
+    assert(sumi_chat_sync(catalog,sizeof(catalog)-1));
+    assert(sumi_chat_count()==3 && sumi_chat_selected()==2);
+    char id[SUMI_CHAT_ID_BYTES+1];
+    sumi_chat_id(id);assert(!strcmp(id,SUMI_CHAT_LEGACY_ID));
+    assert(!sumi_chat_sync(catalog,sizeof(catalog)-2) && sumi_chat_selected()==2);
+    assert(sumi_chat_select(1));sumi_chat_id(id);
+    assert(!strcmp(id,"11111111-1111-4111-8111-111111111111"));
+    const uint8_t empty[]={1,0};
+    assert(sumi_chat_sync(empty,sizeof(empty)));
+    assert(sumi_chat_count()==1 && sumi_chat_selected()==0);
+    sumi_chat_id(id);assert(!id[0]);
 }
 '''
         with tempfile.TemporaryDirectory() as td:

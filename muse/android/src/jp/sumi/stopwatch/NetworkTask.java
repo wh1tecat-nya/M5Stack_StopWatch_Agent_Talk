@@ -5,9 +5,15 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 final class NetworkTask implements SpeechBackend.Task {
+    private static final ExecutorService CLOSER = Executors.newCachedThreadPool(runnable -> {
+        Thread thread = new Thread(runnable, "sumi-network-close");
+        thread.setDaemon(true);
+        return thread;
+    });
     interface Work<T> { T run(NetworkTask request) throws Exception; }
     static final class Failure extends IOException {
         Failure(String message) { super(message); }
@@ -46,39 +52,52 @@ final class NetworkTask implements SpeechBackend.Task {
     }
 
     void own(Closeable closeable) throws IOException {
+        Closeable previous;
+        boolean accepted;
         synchronized (lock) {
-            closeResource();
-            if (cancelled) {
-                closeable.close();
-                throw new IOException("Cancelled");
-            }
-            resource = closeable;
+            previous = resource;
+            accepted = !cancelled;
+            resource = accepted ? closeable : null;
+        }
+        close(previous);
+        if (!accepted) {
+            close(closeable);
+            throw new IOException("Cancelled");
         }
     }
 
     void replace(Closeable closeable) throws IOException {
         synchronized (lock) {
-            if (cancelled) {
-                closeable.close();
-                throw new IOException("Cancelled");
+            if (!cancelled) {
+                resource = closeable;
+                return;
             }
-            resource = closeable;
         }
+        close(closeable);
+        throw new IOException("Cancelled");
     }
 
     private void release() {
-        synchronized (lock) { closeResource(); }
+        close(takeResource());
     }
 
-    private void closeResource() {
-        if (resource == null) return;
-        try { resource.close(); } catch (IOException ignored) {}
-        resource = null;
+    private Closeable takeResource() {
+        synchronized (lock) {
+            Closeable active = resource;
+            resource = null;
+            return active;
+        }
+    }
+
+    private static void close(Closeable active) {
+        if (active == null) return;
+        try { active.close(); } catch (IOException ignored) {}
     }
 
     @Override public void cancel() {
         cancelled = true;
+        Closeable active = takeResource();
         if (future != null) future.cancel(true);
-        release();
+        if (active != null) CLOSER.execute(() -> close(active));
     }
 }

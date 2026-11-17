@@ -6,11 +6,13 @@ import io
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
 import urllib.request
 import zipfile
+import zlib
 
 ROOT = Path(__file__).resolve().parent
 CACHE = ROOT / '.cache'
@@ -59,6 +61,8 @@ def generate_images():
     dest = ESP / 'components/muse'
     data = ['#include <stdint.h>\n#include "sumi_assets.h"\n']
     declarations = ['#pragma once\n#include <stdint.h>\n']
+    ota = os.environ.get('SUMI_OTA') == '1'
+    pixels = bytearray()
     for name, variable in [('kSumiBadge', 'sumi_badge'), ('kSumiAvatar', 'sumi_portrait')]:
         body = re.search(r'\b' + name + r'\s*\[\s*\][^=]*=\s*\{(.*?)\};', source, re.S).group(1)
         raw = bytes(int(v, 16) for v in re.findall(r'0x([0-9A-Fa-f]{2})', body))
@@ -71,11 +75,21 @@ def generate_images():
             pic = Image.new('RGBA', (400, 400), 'white'); pic.alpha_composite(png, (0, 0))
         rgb = pic.convert('RGB')
         values = [((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3) for r, g, b in rgb.get_flattened_data()]
+        pic.save(CACHE / f'{variable}.png')
+        if ota:
+            pixels.extend(struct.pack(f'<{len(values)}H', *values))
+            declarations.append(f'extern const uint16_t *{variable};\n')
+            continue
         declarations.append(f'extern const uint16_t {variable}[{len(values)}];\n')
         data.append(f'const uint16_t {variable}[{len(values)}] = {{\n')
         for i in range(0, len(values), 16): data.append(','.join(f'0x{x:04x}' for x in values[i:i+16]) + ',\n')
         data.append('};\n')
-        pic.save(CACHE / f'{variable}.png')
+    if ota:
+        data.append((ROOT / 'overlay/sumi_assets_storage.inc').read_text())
+        write_changed(CACHE / 'sumi-assets-ota.bin', struct.pack('<4sI', b'SUI1', zlib.crc32(pixels)) + pixels)
+    else:
+        data.append('bool sumi_assets_load(void) { return true; }\n')
+    declarations.append('#include <stdbool.h>\nbool sumi_assets_load(void);\n')
     write_changed(dest / 'sumi_assets.c', ''.join(data).encode())
     write_changed(dest / 'sumi_assets.h', ''.join(declarations).encode())
 
@@ -102,6 +116,7 @@ def prepare():
     for path in (ROOT / 'main').glob('*'):
         copy_changed(path, ESP / 'main' / path.name)
     copy_changed(ROOT / 'partitions.csv', ESP / 'partitions_sumi.csv')
+    copy_changed(ROOT / 'partitions-ota.csv', ESP / 'partitions_sumi_ota.csv')
     copy_changed(ROOT / 'sdkconfig.sumi', ESP / 'sdkconfig.sumi')
     lib = ESP / 'components/sanotts'
     lib.mkdir(exist_ok=True)

@@ -30,6 +30,9 @@ with ZipFile(apk) as source, ZipFile(sys.argv[2], 'a', compression=ZIP_DEFLATED)
         if library not in source.namelist() and library.endswith('/libc++_shared.so'):
             continue
         target.writestr(library, source.read(library))
+    for notice in sorted(source.namelist()):
+        if notice.startswith('assets/licenses/') and not notice.endswith('/'):
+            target.writestr(notice, source.read(notice))
 PYTHON
 fi
 "$tools/zipalign" -fp 4 "$output/unsigned.apk" "$output/aligned.apk"

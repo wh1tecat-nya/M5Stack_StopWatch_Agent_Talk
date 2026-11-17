@@ -1,6 +1,7 @@
 package jp.sumi.stopwatch;
 
 import android.content.Context;
+import android.util.Log;
 import jp.irodori.android.NativeEngine;
 
 import java.io.ByteArrayOutputStream;
@@ -14,6 +15,7 @@ import java.util.Arrays;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
     static final String MODEL = IrodoriModels.MF.name();
@@ -23,8 +25,13 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
     private static final String ANIME_SOURCE = "https://huggingface.co/phasefield-audio/Irodori-TTS-v4.1-Anime/tree/6b259f5baa5e236b3d14cbd1f8555ca87d92b530";
     private static final String REFERENCE = "d318b3ce9d4dc47eab4ead3270834e9bfc4cd0a5b4059c456677c5bc113da643";
     private static final String CODEC = "47376ee24834d7a05a48ebabfe3cde29b3c5e214";
+    private static final int MF08_PROFILE = 3;
+    private static final int MF_STEPS = 4;
+    private static final int MF_REUSE_CONDITIONS = 1;
+    private static final String MF08_ID = "mf-candidate08-v1";
     private final File files;
     private final ExecutorService worker;
+    private final AtomicBoolean warmupQueued = new AtomicBoolean();
     private volatile long engine;
     private int rate;
     private volatile boolean invalid;
@@ -95,6 +102,7 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
             closeEngine();
         }
         if (engine != 0) return engine;
+        long loading = System.nanoTime();
         File modelFile = new File(files, MODEL);
         var model = IrodoriModels.bySize(modelFile.length());
         if (model == null) throw new NetworkTask.Failure("Irodoriモデルを取り込んでください");
@@ -104,17 +112,21 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
             throw new NetworkTask.Failure("取り込んだモデル用のすみの参照を取り込んでください");
         int threads = Math.min(8, Runtime.getRuntime().availableProcessors());
         long loaded = NativeEngine.open(utf8(modelFile.getPath()), utf8(voice.getPath()),
-                utf8("cpu-fast"), threads, model.anime(), true, model.anime() ? 6 : 4);
+                utf8("cpu-fast"), threads, model.anime(), true, model.anime() ? 6 : MF_STEPS);
         if (loaded == 0) throw new NetworkTask.Failure("Irodoriのモデルを読み込めません");
         try {
             if (!model.anime()) {
-                NativeEngine.configureMfProfile(loaded, 2);
-                if (!"mf-candidate07-v1".equals(NativeEngine.mfProfileId(loaded)))
+                NativeEngine.configureMfProfile(loaded, MF08_PROFILE);
+                if (!MF08_ID.equals(NativeEngine.mfProfileId(loaded)))
                     throw new IllegalStateException("Wrong Irodori profile");
-                NativeEngine.configureMfAcceleration(loaded, 1, utf8(""), utf8(""), utf8(""));
+                NativeEngine.configureMfAcceleration(loaded, MF_REUSE_CONDITIONS, utf8(""), utf8(""), utf8(""));
             }
             rate = NativeEngine.sampleRate(loaded);
-            ConversationLog.INSTANCE.event(ConversationLog.IRODORI, model.name() + " · " + threads + "スレッド");
+            String profile = model.anime() ? "" : " · MF08 / " + MF_STEPS + "ステップ";
+            String timing = model.name() + profile + " · CPU · " + threads + "スレッド · 準備 " +
+                    (System.nanoTime() - loading) / 1_000_000 + " ms";
+            ConversationLog.INSTANCE.event(ConversationLog.IRODORI, timing);
+            Log.i("SumiTts", timing);
             engine = loaded;
             return loaded;
         } catch (RuntimeException e) {
@@ -124,16 +136,25 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
     }
 
     @Override public void warmUp() {
+        if ((engine != 0 && !invalid) || !warmupQueued.compareAndSet(false, true)) return;
         worker.submit(() -> {
             try {
                 prepare();
             } catch (Exception | UnsatisfiedLinkError | NoClassDefFoundError ignored) {
                 // Synthesis retries and reports missing models and libraries through its result.
+            } finally {
+                warmupQueued.set(false);
             }
         });
     }
 
     @Override public SpeechBackend.Task synthesize(SpeechBackend.Utterance utterance, SpeechBackend.Result<SpeechBackend.Audio> result) {
+        return synthesize(utterance, false, null, result);
+    }
+
+    @Override public SpeechBackend.Task synthesize(SpeechBackend.Utterance utterance, boolean prefill,
+                                                   Consumer<SpeechBackend.Prefix> prefix,
+                                                   SpeechBackend.Result<SpeechBackend.Audio> result) {
         AtomicBoolean cancelled = new AtomicBoolean();
         AtomicBoolean generating = new AtomicBoolean();
         Future<?> queued = worker.submit(() -> {
@@ -145,6 +166,7 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
                 generating.set(true);
                 if (cancelled.get()) return;
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
+                StartupBuffer startup = prefix == null ? null : new StartupBuffer(prefill);
                 String text = utterance.text().replaceAll("[\\p{So}\\uFE0F\\u200D]+", "").strip();
                 if (text.isEmpty()) throw new NetworkTask.Failure("読み上げる文字がありません");
                 double[] stats = NativeEngine.speakWithCodec(handle, utf8(text), samples -> {
@@ -156,11 +178,22 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
                         pcm[i * 2 + 1] = (byte) (sample >> 8);
                     }
                     out.writeBytes(pcm);
+                    int available = startup == null ? 0 : startup.bytesReady(out.size(), rate);
+                    if (available != 0) {
+                        byte[] snapshot = out.toByteArray();
+                        var audio = new SpeechBackend.Audio(available == snapshot.length
+                                ? snapshot : Arrays.copyOf(snapshot, available), rate);
+                        prefix.accept(new SpeechBackend.Prefix(audio, startup.playable));
+                    }
                     return true;
                 }, 0, false);
                 if (!cancelled.get()) {
-                    if (out.size() == 0 || stats == null || stats[4] != 0) result.failure("Irodoriの音声生成が完了しませんでした");
-                    else result.success(new SpeechBackend.Audio(out.toByteArray(), rate));
+                    if (out.size() == 0 || stats == null || stats.length < 5 || stats[4] != 0)
+                        result.failure("Irodoriの音声生成が完了しませんでした");
+                    else {
+                        logSynthesisTiming(stats);
+                        result.success(new SpeechBackend.Audio(out.toByteArray(), rate));
+                    }
                 }
             } catch (UnsatisfiedLinkError | NoClassDefFoundError e) {
                 if (!cancelled.get()) result.failure("Irodori実行ライブラリを含むAPKをインストールしてください");
@@ -178,6 +211,46 @@ final class IrodoriTts implements SpeechBackend.Tts, AutoCloseable {
             if (handle != 0 && generating.get()) NativeEngine.cancel(handle);
             queued.cancel(false);
         };
+    }
+
+    private static void logSynthesisTiming(double[] stats) {
+        if (stats.length < 7 || stats[5] < 0 || stats[6] < stats[5] || stats[0] < stats[6]) return;
+        String timing = "先頭PCM " + Math.round(stats[0]) + " ms · 条件準備 " + Math.round(stats[5])
+                + " ms · DiT " + Math.round(stats[6] - stats[5])
+                + " ms · 先頭波形変換 " + Math.round(stats[0] - stats[6]) + " ms";
+        ConversationLog.INSTANCE.event(ConversationLog.IRODORI, timing);
+        Log.i("SumiTts", timing);
+    }
+
+    private static final class StartupBuffer {
+        // For older firmware, stay below the 400 ms preroll. With deferred
+        // playback, stay below the capacity of the 64 KiB device buffer.
+        private static final int PREFILL_STEP_MS = 300, PREFILL_LIMIT_MS = 1500;
+        private final int limit;
+        private int uploadedMs;
+        private long previousChunk;
+        private long longestGapMs;
+        private boolean playable;
+
+        StartupBuffer(boolean prefill) {
+            limit = prefill ? PREFILL_LIMIT_MS : PREFILL_STEP_MS;
+        }
+
+        int bytesReady(int bytes, int rate) {
+            if (playable) return 0;
+            long now = System.nanoTime();
+            if (previousChunk != 0) longestGapMs = Math.max(longestGapMs, (now - previousChunk) / 1_000_000);
+            previousChunk = now;
+            long audioMs = bytes * 1000L / (rate * 2);
+            if (audioMs >= Math.max(2_300, longestGapMs + 200)) {
+                playable = true;
+                return bytes;
+            }
+            int buffered = (int) Math.min(limit, audioMs / PREFILL_STEP_MS * PREFILL_STEP_MS);
+            if (buffered <= uploadedMs) return 0;
+            uploadedMs = buffered;
+            return (rate * buffered / 1000) * 2;
+        }
     }
 
     private void closeEngine() {
