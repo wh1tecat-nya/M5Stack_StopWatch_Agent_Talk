@@ -29,6 +29,34 @@ void sumi_phone_encode_header(uint8_t *bytes, uint8_t type, uint32_t turn, uint3
     store_le32(bytes + 5, offset);
 }
 
+bool sumi_phone_buffer_begin(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet)
+{
+    bool deferred = packet->offset == SUMI_PHONE_REPLY_PREFILL;
+    bool streaming = deferred || packet->offset == SUMI_PHONE_REPLY_STREAM;
+    if (!buffer->bytes || buffer->expected || packet->turn != buffer->turn ||
+        packet->type != SUMI_PHONE_REPLY_BEGIN || packet->length || !packet->offset ||
+        (!streaming && (packet->offset > SUMI_PHONE_REPLY_MAX || (packet->offset & 1)))) return false;
+    buffer->streaming = streaming;
+    buffer->playback_deferred = deferred;
+    buffer->expected = streaming ? SUMI_PHONE_REPLY_MAX : packet->offset;
+    return true;
+}
+
+bool sumi_phone_buffer_allow_playback(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet)
+{
+    if (!buffer->playback_deferred || buffer->finished || packet->turn != buffer->turn ||
+        packet->type != SUMI_PHONE_REPLY_PLAY || packet->length || packet->offset) return false;
+    buffer->playback_deferred = false;
+    return true;
+}
+
+bool sumi_phone_buffer_playable(const struct sumi_phone_buffer *buffer, bool started, size_t chunk_bytes)
+{
+    size_t available = buffer->written - buffer->consumed;
+    return available && (buffer->finished || (!buffer->playback_deferred &&
+           available >= (started ? chunk_bytes : SUMI_PHONE_PREROLL)));
+}
+
 bool sumi_phone_buffer_append(struct sumi_phone_buffer *buffer, const struct sumi_phone_packet *packet)
 {
     if (!buffer->bytes || !buffer->expected || buffer->finished || packet->turn != buffer->turn ||

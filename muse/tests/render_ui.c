@@ -66,6 +66,7 @@ bool sumi_phone_ready(void){return phone_ready;}
 bool sumi_phone_set_mode(bool enabled){if(save_fail)return false;phone_mode=enabled;return true;}
 void sumi_phone_apply_setting(void){}
 void sumi_phone_open_settings(void){}
+void sumi_phone_allow_muse_sync(void){}
 bool sumi_wifi_request(void){wifi_operation="add";wifi_setting=true;return true;}
 bool sumi_wifi_select(const char *ssid){wifi_operation="select";strlcpy(wifi_target,ssid,sizeof(wifi_target));wifi_setting=true;return true;}
 bool sumi_wifi_forget(const char *ssid){wifi_operation="forget";strlcpy(wifi_target,ssid,sizeof(wifi_target));wifi_setting=true;return true;}
@@ -157,8 +158,10 @@ int main(void){
     show_page(11);tick(1);picture("mic-gain");
     show_page(12);tick(1);picture("chat-selection");
     assert(sumi_chat_selected()==1);
-    lv_obj_send_event(lv_obj_get_child(panel,2),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==0);
-    show_page(12);lv_obj_send_event(lv_obj_get_child(panel,1),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==1);
+    lv_obj_t *chat_choices=lv_obj_get_child(panel,1);
+    lv_obj_send_event(lv_obj_get_child(chat_choices,0),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==0);
+    show_page(12);chat_choices=lv_obj_get_child(panel,1);
+    lv_obj_send_event(lv_obj_get_child(chat_choices,1),LV_EVENT_CLICKED,NULL);assert(sumi_chat_selected()==1);
     show_page(19);tick(1);picture("send-settings-default-on");
     assert(sumi_chat_wearable() && saved_wearable==-1);
     lv_obj_send_event(lv_obj_get_child(panel,3),LV_EVENT_CLICKED,NULL);

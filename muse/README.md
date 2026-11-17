@@ -127,6 +127,24 @@ muse/.cache/idf-tools/python_env/idf6.0_py3.13_env/bin/python muse/set_sdk_token
 
 アプリ領域を1つにして辞書を収めるため、OTA更新は無効です。Secure BootやeFuseの有効化は行いません。書き込みにはSDKが生成する各イメージと専用辞書を使用します。`prod_data`と`prod_bak`を消す全消去や、空白領域を埋めた全体イメージは使わないでください。元に戻す場合は移行前に退避したフラッシュを復元します。
 
+### BLEで更新できる構成
+
+OTA用ビルドは4 MiBのアプリ領域を2つ使います。画像は `sumi-assets.bin` として共有領域 `0xEB0000` に置きます。辞書と製品情報は上の表と同じ位置です。
+
+```sh
+SUMI_OTA=1 SUMI_OTA_VERSION=0.1.0 \
+  SUMI_BUILD_DIR="$PWD/muse/.cache/c152-ota-build" \
+  SUMI_DIST_DIR="$PWD/muse/.cache/c152-ota-dist" bash muse/build.sh
+```
+
+初回のOTA用ビルドで署名鍵を `muse/.cache/ota-signing/c152.pem` に作成します。以降も同じ鍵で署名します。別の保管場所を使うときは `SUMI_OTA_SIGNING_KEY` に既存の秘密鍵を指定します。署名鍵は配布物に含めません。
+
+すみ StopWatch v0.3.18とC152 v0.1.5から、署名済みの `sumi-muse.bin` をアプリで圧縮してBLE転送します。C152は展開したイメージを空きスロットに書き込み、署名検証と再起動後の確認を行います。v0.1.4以前からv0.1.5へ更新するときは従来の転送を使います。ATT MTUを517にした状態でビルドするには、新しい `SUMI_BUILD_DIR` を指定します。
+
+現行のすみファームから初めて移行するときは、フラッシュ全体をバックアップし、`verify-flash` で照合した後、OTA用のブートローダー、パーティションテーブル、初期OTA管理領域、アプリ、共有画像を書き込みます。設定と登録を引き継ぐため、NVS、製品情報、辞書は保持します。配布先の `flash-plan.json` で各アドレスとSHA-256を確認できます。書き込み後はアプリが `ota_0` から起動し、BLEで接続できることを確認します。
+
+次回からはBLEモードでAndroidの「接続」→「C152ファームウェアを更新」を開き、その機器用に署名した `sumi-muse.bin` を選びます。C152は空きスロットで署名を検証してから再起動します。新ファームが画面を初期化し、BLEで再接続できたら起動を確定します。確定できない場合は旧スロットへ戻ります。Androidは起動スロットとビルドIDを読み返して結果を表示します。
+
 MuseアプリのSettings → DevicesでDeveloper modeを有効にし、Add Deviceから登録します。ペアリングの確認要求は左ボタンで確定します。登録が済むまでは公式SDKのセットアップ画面を表示します。登録後は本体のWi-FiでMuseへ直接接続します。詳細は[公式導入手順](https://github.com/facebookincubator/muse-gadget-sdk/blob/463bd2a05380fea4211b0099ad0f70933c108b20/esp32/README.md)を参照してください。
 
 ## USB接続中の待機音

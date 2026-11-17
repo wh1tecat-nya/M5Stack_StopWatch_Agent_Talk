@@ -33,7 +33,9 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.os.ParcelUuid;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.OpenableColumns;
+import android.util.Log;
 
 import java.io.File;
 import java.io.IOException;
@@ -43,12 +45,14 @@ import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 import java.util.function.IntSupplier;
 
 public final class ConversationService extends Service implements StopwatchAudio.Link {
@@ -60,10 +64,27 @@ public final class ConversationService extends Service implements StopwatchAudio
     private static final UUID CCCD = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final int WRITE = 1, READ = 2, DESCRIPTOR = 3;
     private static final int NOTIFICATION_ID = 152;
+    private static final int CHAT_SYNC_INTERVAL = 4_000;
+    private static final String CHAT_CATALOG_REQUEST = """
+            この依頼はStopWatchの会話先一覧を取得するためだけの一時的な処理です。
+            この依頼内容と取得結果を、今後のコンテキストとして記憶しないでください。
+            メモリ、プロフィール、ノート、ファイルへの作成・追記・更新は一切行わないでください。
+            あなたがアクセスできるチャット一覧取得機能を使って、現在存在するアーカイブされていない
+            サイドチャットのタイトルと正確な session_id を漏れなく取得してください。
+            メインチャットは含めず、IDや名前を推測しないでください。説明やMarkdownなしでJSONだけを返してください。
+            取得が完了した場合は {"request_id":"%s","complete":true,"chats":[{"session_id":"UUID","title":"表示名"}]}。
+            0件の場合は chats を空配列にしてください。一覧を完全に取得できない場合は
+            {"request_id":"%s","complete":false,"chats":[]} を返してください。
+            request_id はこの依頼と応答を照合するための値です。例の値をそのまま返してください。
+            """;
     private static final String CHANNEL = "stopwatch_connection";
     private static final String CONNECT = "jp.sumi.stopwatch.CONNECT";
     static final String ADDRESS = "address", NAME = "name";
-    private record Operation(int type, IntSupplier start, Consumer<byte[]> complete) {}
+    private record Operation(int type, IntSupplier start, Consumer<byte[]> complete, IntConsumer failure) {
+        Operation(int type, IntSupplier start, Consumer<byte[]> complete) {
+            this(type, start, complete, null);
+        }
+    }
     record Nearby(String address, String name) {}
     private final ConversationLog log = ConversationLog.INSTANCE;
     private final Map<String, Nearby> nearby = new LinkedHashMap<>();
@@ -73,6 +94,13 @@ public final class ConversationService extends Service implements StopwatchAudio
     private String status = "StopWatchを登録すると自動で接続します";
     private String assets = "";
     private DeviceSettings.Snapshot snapshot;
+    private ChatCatalog chatCatalog;
+    private ChatCatalog.Watch watchChats;
+    private SpeechBackend.Task catalogRequest;
+    private boolean catalogSyncBusy, catalogUnsupported;
+    private String catalogStatus = "";
+    private String catalogLinkProblem = "";
+    private final Runnable syncCatalog = this::syncChatCatalog;
     private PowerManager.WakeLock wake;
     private boolean foreground, wanted, settingPending;
     private long reconnectDelay = 1_000;
@@ -93,11 +121,52 @@ public final class ConversationService extends Service implements StopwatchAudio
     private BluetoothAdapter adapter;
     private BluetoothGatt gatt;
     private BluetoothGattCharacteristic rx, tx, settingsCharacteristic;
+    private int mtu = 23;
     private final ExecutorService workers = Executors.newCachedThreadPool();
     private final ExecutorService inference = Executors.newSingleThreadExecutor();
     private PhoneSettings phone;
     private IrodoriTts irodori;
     private MuseChat muse;
+    private SpeechBackend.Task museVerification;
+    private MuseAccessSync.Download museDownload;
+    private byte[] museUpload;
+    private MusePair managedPair;
+    private Consumer<String> managedCompletion;
+    private final java.util.Set<String> rotationsInFlight = new java.util.HashSet<>();
+    private final java.util.Map<Long, Long> refreshBackoff = new java.util.HashMap<>();
+    private final Runnable retryManagedPair = () -> syncMusePair(null, null);
+    private final Runnable pollMode = this::pollDeviceMode;
+    private final Runnable updateReplyWatch = this::updateReplyWatch;
+    private final ArrayDeque<String> externalReplies = new ArrayDeque<>();
+    private final LinkedHashSet<String> deliveredReplies = new LinkedHashSet<>();
+    private SpeechBackend.Task replyWatch;
+    private String watchedSession;
+    private long watchGeneration, watchRetryAt;
+    private long watchRetryDelay = 2_000;
+    private final Runnable probeFirmware = this::probeFirmware;
+    private final Runnable firmwareBootTimeout = () -> finishFirmware("更新後の起動を確認できませんでした");
+    private C152Ota.Info firmwareInfo;
+    private boolean firmwareProbeBusy, firmwareUnsupported, readingFirmware;
+    private String firmwareMessage = "";
+    private FirmwareTransfer firmware;
+
+    private static final class FirmwareTransfer {
+        final C152Ota.Image image;
+        final C152Ota.Upload upload;
+        final int oldSlot;
+        final long started = SystemClock.elapsedRealtime();
+        int offset, percent = -1;
+        long verifyAfter;
+        boolean disconnected;
+        FirmwareTransfer(C152Ota.Image image, C152Ota.Upload upload, int oldSlot) {
+            this.image = image;
+            this.upload = upload;
+            this.oldSlot = oldSlot;
+        }
+        boolean rebooting() { return verifyAfter != 0; }
+    }
+    private String museSyncStatus = "";
+    private boolean museSyncBusy;
     private final Map<String, SpeechBackend.Provider<SpeechBackend.Asr>> asrBackends = new LinkedHashMap<>();
     private final Map<String, SpeechBackend.Provider<SpeechBackend.Tts>> ttsBackends = new LinkedHashMap<>();
     private SpeechPipeline pipeline;
@@ -130,17 +199,18 @@ public final class ConversationService extends Service implements StopwatchAudio
         wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "sumi:conversation");
         wake.setReferenceCounted(false);
         phone = new PhoneSettings(this);
+        chatCatalog = phone.chatCatalog();
         log.includeText(phone.logText());
         irodori = new IrodoriTts(this, inference);
         var openai = new OpenAiAsr(phone::openAiKey, workers);
         var android = new AndroidAsr(this, handler, workers);
-        muse = new MuseChat(phone::museCredential, workers);
+        muse = new MuseChat(this::museChatCredential, workers);
         asrBackends.put("openai", new SpeechBackend.Provider<>("OpenAI gpt-transcribe", openai));
         asrBackends.put("android", new SpeechBackend.Provider<>("Android 端末内", android));
         ttsBackends.put("irodori", new SpeechBackend.Provider<>("Irodori-TTS", irodori));
         pipeline = new SpeechPipeline(handler,
                 () -> new SpeechBackend.Providers(asrBackends.getOrDefault(phone.asr(), asrBackends.get("openai")).backend(),
-                        muse, ttsBackends.getOrDefault(phone.tts(), ttsBackends.get("irodori")).backend()),
+                        this::managedReply, ttsBackends.getOrDefault(phone.tts(), ttsBackends.get("irodori")).backend()),
                 this::stage, workers);
         audio = new StopwatchAudio(this, new StopwatchAudio.Speech() {
             @Override public void start(StopwatchAudio.Recording note, StopwatchAudio.Reply reply) {
@@ -149,8 +219,13 @@ public final class ConversationService extends Service implements StopwatchAudio
             }
             @Override public void cancel() { pipeline.cancel(); }
         }, this::stage, active -> {
-            if (active) wake.acquire(210_000);
-            else if (wake.isHeld()) wake.release();
+            if (active) {
+                wake.acquire(210_000);
+                if (!phone.echo()) {
+                    ttsBackends.getOrDefault(phone.tts(), ttsBackends.get("irodori")).backend().warmUp();
+                }
+            } else if (wake.isHeld()) wake.release();
+            scheduleReplyWatch();
         });
     }
 
@@ -185,6 +260,7 @@ public final class ConversationService extends Service implements StopwatchAudio
         listener = null;
         wanted = false;
         closeLink();
+        if (catalogRequest != null) catalogRequest.cancel();
         unregisterReceiver(bluetoothState);
         handler.removeCallbacksAndMessages(null);
         irodori.close();
@@ -199,19 +275,627 @@ public final class ConversationService extends Service implements StopwatchAudio
     String status() { return status; }
     String assets() { return assets; }
     boolean searching() { return scan != null; }
-    boolean settingsBusy() { return settingPending; }
+    boolean settingsBusy() { return settingPending || museSyncBusy || firmwareProbeBusy || firmware != null; }
+    boolean museManaged() { return managedPair != null; }
     DeviceSettings.Snapshot settings() { return snapshot; }
     List<Nearby> nearby() { return List.copyOf(nearby.values()); }
     Map<String, SpeechBackend.Provider<SpeechBackend.Asr>> asrOptions() { return asrBackends; }
     Map<String, SpeechBackend.Provider<SpeechBackend.Tts>> ttsOptions() { return ttsBackends; }
 
+    ChatCatalog chatCatalog() { return chatCatalog; }
+    boolean catalogRefreshing() { return catalogRequest != null; }
+    boolean canRefreshCatalog() { return firmware == null && !catalogRefreshing() && !wake.isHeld() && (museManaged() || phone.hasCredential("muse")); }
+    String catalogStatus() { return catalogStatus; }
+
+    String catalogLinkStatus() {
+        if (catalogUnsupported) return "一覧の同期にはC152の更新が必要";
+        if (!catalogLinkProblem.isEmpty()) return catalogLinkProblem;
+        if (snapshot == null) return "BLE接続時にC152と自動同期";
+        return selectedChatId() != null ? "C152と同期済み" : "C152への同期を待機中";
+    }
+
+    String selectedChatId() {
+        if (watchChats == null) {
+            if (catalogUnsupported && chatCatalog.equals(ChatCatalog.DEFAULT) && snapshot != null)
+                return snapshot.values()[1] == 0 ? "" : ChatCatalog.LEGACY_ID;
+            return null;
+        }
+        List<ChatCatalog.Chat> rows = chatCatalog.visible();
+        return watchChats.hash() == ChatCatalog.hash(chatCatalog.watchData()) && watchChats.selected() < rows.size()
+                ? rows.get(watchChats.selected()).id() : null;
+    }
+
+    boolean canSelectChats() { return selectedChatId() != null && !settingsBusy(); }
+
+    void refreshChatCatalog() {
+        if (!canRefreshCatalog()) return;
+        stopReplyWatch();
+        String session = selectedChatId();
+        if (session == null) session = "";
+        String id = UUID.randomUUID().toString();
+        var call = new SpeechBackend.ChatRequest(CHAT_CATALOG_REQUEST.formatted(id, id), session, false, id);
+        catalogRequest = managedReply(call,
+                SpeechBackend.result(value -> handler.post(() -> {
+                    catalogRequest = null;
+                    try { saveChatCatalog(chatCatalog.refreshed(value)); }
+                    catch (org.json.JSONException e) {
+                        log.event(ConversationLog.MUSE, "チャット一覧 · 完全な一覧として検証できませんでした");
+                        catalogStatus = "Museから完全な一覧を取得できませんでした";
+                        changed();
+                    }
+                }), error -> handler.post(() -> {
+                    catalogRequest = null;
+                    catalogStatus = error;
+                    changed();
+                })));
+        catalogStatus = "Museにチャット一覧を確認中…";
+        changed();
+    }
+
+    void editChat(String id, boolean hide) {
+        if (ChatCatalog.isSideId(id)) saveChatCatalog(chatCatalog.edit(id, hide));
+    }
+
+    void showChat(String id) {
+        if (chatCatalog.hidden().containsKey(id)) saveChatCatalog(chatCatalog.show(id));
+    }
+
+    private void saveChatCatalog(ChatCatalog next) {
+        if (!phone.saveChatCatalog(next)) {
+            catalogStatus = "チャット一覧を保存できませんでした";
+        } else {
+            chatCatalog = next;
+            catalogStatus = "チャット一覧を保存しました";
+            scheduleChatCatalog(0);
+        }
+        changed();
+    }
+
+    void selectChat(String id) {
+        if (!canSelectChats()) return;
+        if (catalogSyncBusy) {
+            BluetoothGatt connection = gatt;
+            handler.postDelayed(() -> { if (gatt == connection) selectChat(id); }, 120);
+            return;
+        }
+        List<ChatCatalog.Chat> rows = chatCatalog.visible();
+        for (int i = 0; i < rows.size(); i++) {
+            if (!rows.get(i).id().equals(id)) continue;
+            updateSetting(1, i);
+            return;
+        }
+    }
+
+    private void scheduleChatCatalog(long delay) {
+        handler.removeCallbacks(syncCatalog);
+        if (gatt != null && snapshot != null && !catalogUnsupported) handler.postDelayed(syncCatalog, delay);
+    }
+
+    private void syncChatCatalog() {
+        BluetoothGatt connection = gatt;
+        if (connection == null || snapshot == null || catalogUnsupported) return;
+        if (settingsBusy() || catalogSyncBusy || wake.isHeld()) { scheduleChatCatalog(CHAT_SYNC_INTERVAL); return; }
+        catalogSyncBusy = true;
+        readChatCatalog(connection, current -> {
+            byte[] data = chatCatalog.watchData();
+            int hash = ChatCatalog.hash(data);
+            if (current.hash() == hash) finishChatCatalog(current);
+            else writeCatalog(connection, ChatCatalog.command(ChatCatalog.BEGIN, data.length),
+                    () -> uploadChatCatalog(connection, data, 0, hash));
+        });
+    }
+
+    private void readChatCatalog(BluetoothGatt connection, Consumer<ChatCatalog.Watch> result) {
+        writeCatalog(connection, ChatCatalog.command(ChatCatalog.STATUS, 0), () ->
+                enqueue(new Operation(READ,
+                        () -> connection.readCharacteristic(settingsCharacteristic)
+                                ? BluetoothStatusCodes.SUCCESS : BluetoothStatusCodes.ERROR_UNKNOWN,
+                        bytes -> {
+                            ChatCatalog.Watch state;
+                            try { state = ChatCatalog.Watch.read(bytes); }
+                            catch (IllegalArgumentException e) { chatCatalogFailure(0); return; }
+                            result.accept(state);
+                        }, this::chatCatalogFailure)));
+    }
+
+    private void uploadChatCatalog(BluetoothGatt connection, byte[] data, int offset, int hash) {
+        if (offset == data.length) {
+            writeCatalog(connection, ChatCatalog.command(ChatCatalog.COMMIT, 0), () ->
+                    readChatCatalog(connection, applied -> {
+                        if (applied.hash() == hash) finishChatCatalog(applied);
+                        else chatCatalogFailure(0);
+                    }));
+            return;
+        }
+        byte[] packet = ChatCatalog.part(data, offset, mtu);
+        writeCatalog(connection, packet, () -> uploadChatCatalog(connection, data, offset + packet.length - 4, hash));
+    }
+
+    private void writeCatalog(BluetoothGatt connection, byte[] packet, Runnable done) {
+        enqueue(new Operation(WRITE, () -> connection.writeCharacteristic(settingsCharacteristic, packet,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT), unused -> done.run(), this::chatCatalogFailure));
+    }
+
+    private void finishChatCatalog(ChatCatalog.Watch current) {
+        catalogSyncBusy = false;
+        boolean different = !current.equals(watchChats) || !catalogLinkProblem.isEmpty();
+        catalogLinkProblem = "";
+        watchChats = current;
+        if (different) changed();
+        else scheduleReplyWatch();
+        scheduleChatCatalog(CHAT_SYNC_INTERVAL);
+    }
+
+    private void chatCatalogFailure(int code) {
+        catalogSyncBusy = false;
+        if (code == 0x0d || code == 0x0e) {
+            catalogUnsupported = true;
+        } else if (code != 0x81) catalogLinkProblem = "C152との一覧同期を再試行中";
+        changed();
+        scheduleChatCatalog(CHAT_SYNC_INTERVAL);
+    }
+
     SpeechBackend.Task checkMuse(Consumer<String> result) {
-        return muse.check(SpeechBackend.result(
+        return managedReply(null, SpeechBackend.result(
                 value -> handler.post(() -> result.accept(value)),
                 error -> handler.post(() -> result.accept(error))));
     }
 
-    private void changed() { if (listener != null) listener.run(); }
+    private String museChatCredential() {
+        String saved = phone.museCredential();
+        if (managedPair == null) return saved;
+        try {
+            var fields = saved.isEmpty() ? new org.json.JSONObject() : new org.json.JSONObject(saved);
+            return fields.put("token", managedPair.access()).toString();
+        } catch (org.json.JSONException e) { return saved; }
+    }
+
+    private SpeechBackend.Task managedReply(SpeechBackend.ChatRequest call, SpeechBackend.Result<String> result) {
+        final class Attempt implements SpeechBackend.Task {
+            private SpeechBackend.Task network;
+            private volatile boolean cancelled;
+
+            void start(boolean retry) {
+                if (cancelled) return;
+                String tried = managedPair == null ? "" : managedPair.access();
+                var receive = SpeechBackend.<String>result(result::success, error -> {
+                    if (retry && MuseChat.accessRejected(error)) handler.post(() -> {
+                        if (cancelled) return;
+                        if (snapshot == null) { result.failure(error); return; }
+                        if (snapshot.values()[0] != 1) {
+                            if (call != null && call.catalog()) syncMusePair(null, problem -> {
+                                if (cancelled) return;
+                                if (problem == null) start(false);
+                                else result.failure(problem);
+                            });
+                            else result.failure(error);
+                            return;
+                        }
+                        syncMusePair(tried, problem -> {
+                            if (cancelled) return;
+                            if (problem == null) start(tried.isEmpty());
+                            else result.failure(problem);
+                        });
+                    });
+                    else if (!cancelled) result.failure(error);
+                });
+                network = call == null ? muse.check(receive) : muse.reply(call, receive);
+            }
+
+            @Override public void cancel() {
+                cancelled = true;
+                if (network != null) network.cancel();
+            }
+        }
+        Attempt attempt = new Attempt();
+        attempt.start(true);
+        return attempt;
+    }
+
+    boolean museSyncReady() { return snapshot != null && !settingsBusy() && !catalogSyncBusy; }
+    String museSyncStatus() {
+        if (!museSyncStatus.isEmpty()) return museSyncStatus;
+        return snapshot == null ? "Muse認証の同期にはC152とのBLE接続が必要です" : "";
+    }
+
+    void syncMuse(boolean send) {
+        if (!museSyncReady()) return;
+        String previous = phone.museCredential();
+        final String access;
+        try {
+            access = send ? new org.json.JSONObject(previous).getString("token") : "";
+            if (send && (!MuseChat.isAccessToken(access) || access.length() > MuseAccessSync.MAX_TOKEN))
+                throw new IllegalArgumentException();
+        } catch (Exception e) {
+            finishMuseSync("スマホにC152用の端末アクセストークンを保存してください");
+            return;
+        }
+        BluetoothGatt connection = gatt;
+        museSyncBusy = true;
+        museSyncStatus = "Muse認証を同期中…";
+        museDownload = new MuseAccessSync.Download();
+        changed();
+        readMuseAccess(connection, MuseAccessSync.READ, () -> {
+            byte[] c152 = museDownload.token();
+            String candidate = send ? access : new String(c152, java.nio.charset.StandardCharsets.US_ASCII);
+            if (!MuseChat.isAccessToken(candidate)) {
+                finishMuseSync("C152の端末アクセストークンを確認してください");
+                return;
+            }
+            museVerification = muse.verifyAccess(candidate, SpeechBackend.result(
+                    verified -> handler.post(() -> {
+                        if (gatt != connection || !museSyncBusy) return;
+                        museVerification = null;
+                        if (send) sendMuseAccess(connection, previous, verified);
+                        else saveMuseAccess(previous, verified);
+                    }),
+                    error -> handler.post(() -> {
+                        if (gatt != connection || !museSyncBusy) return;
+                        museVerification = null;
+                        finishMuseSync(error);
+                    })));
+        });
+    }
+
+    private void readMuseAccess(BluetoothGatt connection, int command, Runnable done) {
+        writeMuseAccess(connection, MuseAccessSync.command(command, museDownload.offset()), () ->
+                enqueue(new Operation(READ,
+                        () -> connection.readCharacteristic(settingsCharacteristic)
+                                ? BluetoothStatusCodes.SUCCESS : BluetoothStatusCodes.ERROR_UNKNOWN,
+                        bytes -> {
+                            try {
+                                museDownload.append(bytes);
+                            } catch (IllegalArgumentException e) {
+                                finishMuseSync("C152の認証データを読み取れませんでした");
+                                return;
+                            } finally {
+                                if (bytes != null) java.util.Arrays.fill(bytes, (byte) 0);
+                            }
+                            if (museDownload.finished())
+                                writeMuseAccess(connection, MuseAccessSync.command(MuseAccessSync.CLEAR, 0), done);
+                            else readMuseAccess(connection, command, done);
+                        }, this::museSyncError)));
+    }
+
+    private void saveMuseAccess(String previous, String access) {
+        try {
+            var fields = previous.isEmpty() ? new org.json.JSONObject() : new org.json.JSONObject(previous);
+            fields.put("token", access);
+            if (!phone.replaceMuseCredential(previous, fields.toString())) {
+                finishMuseSync("同期中にスマホの認証設定が変わったか、保存できませんでした");
+                return;
+            }
+            finishMuseSync("Muse認証をC152から取り込みました");
+        } catch (org.json.JSONException e) {
+            finishMuseSync("スマホにMuse認証を保存できませんでした");
+        }
+    }
+
+    private void sendMuseAccess(BluetoothGatt connection, String previous, String access) {
+        if (!previous.equals(phone.museCredential())) {
+            finishMuseSync("同期中にスマホの認証設定が変わりました。もう一度同期してください");
+            return;
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(museDownload.token());
+            byte[] token = access.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            museUpload = java.util.Arrays.copyOf(digest, digest.length + token.length);
+            System.arraycopy(token, 0, museUpload, digest.length, token.length);
+            java.util.Arrays.fill(token, (byte) 0);
+            writeMuseAccess(connection, MuseAccessSync.command(MuseAccessSync.BEGIN_WRITE, token.length),
+                    () -> uploadMuseAccess(connection, 0, () -> {
+                        finishMuseSync("Muse認証をC152に保存しました");
+                        handler.post(retryManagedPair);
+                    }));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            finishMuseSync("C152への認証送信を開始できませんでした");
+        }
+    }
+
+    private void uploadMuseAccess(BluetoothGatt connection, int offset, Runnable done) {
+        if (offset == museUpload.length) {
+            writeMuseAccess(connection, MuseAccessSync.command(MuseAccessSync.COMMIT, 0), done);
+            return;
+        }
+        byte[] packet = MuseAccessSync.part(mtu, offset, museUpload);
+        writeMuseAccess(connection, packet, () -> uploadMuseAccess(connection, offset + packet.length - MuseAccessSync.HEADER, done));
+    }
+
+    private void syncMusePair(String rejectedAccess, Consumer<String> completion) {
+        if (catalogSyncBusy) {
+            BluetoothGatt connection = gatt;
+            handler.postDelayed(() -> {
+                if (gatt == connection) syncMusePair(rejectedAccess, completion);
+                else if (completion != null) completion.accept("StopWatchとの接続が切れました");
+            }, 150);
+            return;
+        }
+        if (!museSyncReady()) {
+            if (completion != null) completion.accept("Muse認証を同期中です。接続を確認してください");
+            return;
+        }
+        BluetoothGatt connection = gatt;
+        String watch = target;
+        museSyncBusy = true;
+        managedCompletion = completion;
+        museDownload = new MuseAccessSync.Download(MuseAccessSync.MAX_PAIR);
+        readMuseAccess(connection, MuseAccessSync.PAIR_READ, () -> {
+            try {
+                MusePair pair = MusePair.read(museDownload.token());
+                handleMusePair(connection, watch, pair, rejectedAccess);
+            } catch (Exception e) {
+                finishMuseSync("C152のMuse認証を同期できませんでした");
+            }
+        });
+    }
+
+    private void handleMusePair(BluetoothGatt connection, String watch, MusePair current,
+                                String rejectedAccess) throws org.json.JSONException {
+        String saved = phone.museRotation(watch);
+        var journal = saved.isEmpty() ? new org.json.JSONObject() : new org.json.JSONObject(saved);
+        boolean matches = journal.has("revision") && journal.getLong("revision") == current.revision();
+        if (current.reserved()) {
+            if (!matches) {
+                finishMuseSync("認証更新を開始したスマホをC152に接続してください");
+                return;
+            }
+            switch (journal.optString("phase")) {
+                case "ready" -> copyMuseRotation(connection, watch, current, journal);
+                case "refused" -> releaseMuseRotation(connection, watch, current, journal);
+                case "prepared" -> rotateMuse(connection, watch, current);
+                default -> {
+                    if (rotationsInFlight.contains(watch)) {
+                        // The running worker schedules a new sync once its result is durable.
+                        finishMuseSync("Museが認証を更新中です");
+                    } else finishMuseSync("Museの更新結果を受信できませんでした。Museの登録を確認してください");
+                }
+            }
+            return;
+        }
+        if (!saved.isEmpty()) phone.saveMuseRotation(watch, "");
+        if (!activateMusePair(watch, current)) { finishMuseSync("スマホにMuse認証を保存できませんでした"); return; }
+        if (rejectedAccess == null || (!rejectedAccess.isEmpty() && !rejectedAccess.equals(current.access()))) {
+            finishManagedPair("Muse認証をC152と同期しました");
+            return;
+        }
+        if (rejectedAccess.isEmpty()) {
+            // The failed request used the old, manually stored copy. Try the pair from C152 first.
+            finishManagedPair("Muse認証をC152と同期しました");
+            return;
+        }
+        long now = android.os.SystemClock.elapsedRealtime();
+        refreshBackoff.values().removeIf(until -> until <= now);
+        if (refreshBackoff.containsKey(current.revision())) {
+            finishMuseSync("Muse認証を更新できませんでした。少し待ってから再試行してください");
+            return;
+        }
+        if (!saveRotationState(watch, current.revision(), "prepared", null)) {
+            finishMuseSync("Muse認証の更新を準備できませんでした");
+            return;
+        }
+        writeMuseAccess(connection, MuseAccessSync.reservation(MuseAccessSync.RESERVE, current.revision()),
+                () -> rotateMuse(connection, watch, current));
+    }
+
+    private boolean activateMusePair(String watch, MusePair pair) throws org.json.JSONException {
+        String data = new org.json.JSONObject().put("access", pair.access()).put("refresh", pair.refresh())
+                .put("device", pair.device()).toString();
+        if (!data.equals(phone.musePair(watch)) && !phone.saveMusePair(watch, data)) return false;
+        managedPair = pair;
+        return true;
+    }
+
+    private boolean saveRotationState(String watch, long revision, String phase, MuseChat.Rotation rotation) {
+        try {
+            var journal = new org.json.JSONObject().put("revision", revision).put("phase", phase);
+            if (rotation != null) journal.put("status", rotation.status())
+                    .put("access", rotation.access()).put("refresh", rotation.refresh());
+            return phone.saveMuseRotation(watch, journal.toString());
+        } catch (org.json.JSONException e) { return false; }
+    }
+
+    private void rotateMuse(BluetoothGatt connection, String watch, MusePair current) {
+        if (!saveRotationState(watch, current.revision(), "requested", null)) {
+            finishMuseSync("Muse認証の更新を開始できませんでした");
+            return;
+        }
+        refreshBackoff.put(current.revision(), android.os.SystemClock.elapsedRealtime() + 60_000);
+        rotationsInFlight.add(watch);
+        NetworkTask.start(workers, SpeechBackend.<Boolean>result(
+                stored -> handler.post(() -> rotationFinished(connection, watch, stored)),
+                error -> handler.post(() -> rotationFinished(connection, watch, false))),
+                "Museの更新結果を受信できませんでした", request -> {
+                    MuseChat.Rotation result = MuseChat.rotate(request, current);
+                    if (result.succeeded()) return saveRotationState(watch, current.revision(), "ready", result);
+                    if (result.status() >= 400 && result.status() < 500)
+                        return saveRotationState(watch, current.revision(), "refused", result);
+                    return false;
+                });
+    }
+
+    private void rotationFinished(BluetoothGatt connection, String watch, boolean stored) {
+        rotationsInFlight.remove(watch);
+        if (gatt == connection && museSyncBusy && watch.equals(target)) {
+            Consumer<String> completion = managedCompletion;
+            managedCompletion = null;
+            clearMuseSync();
+            if (stored) syncMusePair(null, completion);
+            else {
+                String error = "Museの更新結果を取得できませんでした。認証を確認してください";
+                finishMuseSync(error);
+                if (completion != null) completion.accept(error);
+            }
+        } else if (watch.equals(target) && stored) handler.post(retryManagedPair);
+    }
+
+    private void copyMuseRotation(BluetoothGatt connection, String watch, MusePair current,
+                                  org.json.JSONObject journal) throws org.json.JSONException {
+        String access = journal.getString("access"), refresh = journal.getString("refresh");
+        museUpload = current.replacement(access, refresh);
+        writeMuseAccess(connection, MuseAccessSync.command(MuseAccessSync.PAIR_BEGIN, museUpload.length),
+                () -> uploadMuseAccess(connection, 0, () -> {
+                    phone.saveMuseRotation(watch, "");
+                    try {
+                        var updated = new MusePair(current.revision(), false, current.device(), access, refresh);
+                        if (activateMusePair(watch, updated)) finishManagedPair("スマホでMuse認証を更新し、C152に保存しました");
+                        else finishMuseSync("C152に保存済み。スマホの認証をもう一度同期してください");
+                    } catch (org.json.JSONException e) {
+                        finishMuseSync("C152に保存済み。スマホの認証をもう一度同期してください");
+                    }
+                }));
+    }
+
+    private void releaseMuseRotation(BluetoothGatt connection, String watch, MusePair current,
+                                     org.json.JSONObject journal) {
+        int code = journal.optInt("status");
+        writeMuseAccess(connection, MuseAccessSync.reservation(MuseAccessSync.RELEASE, current.revision()), () -> {
+            phone.saveMuseRotation(watch, "");
+            finishMuseSync("Museが端末認証の更新を拒否しました（HTTP " + code + "）");
+        });
+    }
+
+    private void finishManagedPair(String message) {
+        Consumer<String> completion = managedCompletion;
+        managedCompletion = null;
+        finishMuseSync(message);
+        if (completion != null) completion.accept(null);
+    }
+
+    private void writeMuseAccess(BluetoothGatt connection, byte[] bytes, Runnable done) {
+        enqueue(new Operation(WRITE, () -> connection.writeCharacteristic(settingsCharacteristic, bytes,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT), unused -> done.run(), this::museSyncError));
+    }
+
+    private void museSyncError(int code) {
+        boolean automatic = museDownload != null && museDownload.maximum() == MuseAccessSync.MAX_PAIR;
+        finishMuseSync(switch (code) {
+            case 0x0d, 0x0e -> "C152のファームウェアをMuse認証同期版へ更新してください";
+            case 0x80 -> "C152の「スマホから設定」でMuse認証の同期を許可してください";
+            case 0x81 -> "C152の会話や設定が終わってから同期してください";
+            case 0x82 -> "C152にMuseの端末アクセストークンがありません";
+            case 0x83 -> "同期中にC152の認証が更新されました。もう一度同期してください";
+            case 0x84 -> "C152にMuse認証を保存できませんでした";
+            default -> "Muse認証を同期できませんでした。C152で同期の許可と接続を確認してください";
+        });
+        if (automatic && (code == 0x80 || code == 0x81) && speechReady)
+            handler.postDelayed(retryManagedPair, code == 0x80 ? 6_000 : 1_500);
+    }
+
+    private void clearMuseSync() {
+        if (museVerification != null) museVerification.cancel();
+        if (museDownload != null) museDownload.clear();
+        if (museUpload != null) java.util.Arrays.fill(museUpload, (byte) 0);
+        museVerification = null;
+        museDownload = null;
+        museUpload = null;
+        museSyncBusy = false;
+    }
+
+    private void finishMuseSync(String message) {
+        Consumer<String> completion = managedCompletion;
+        managedCompletion = null;
+        clearMuseSync();
+        museSyncStatus = message;
+        log.event(ConversationLog.MUSE, message);
+        changed();
+        if (completion != null) completion.accept(message);
+    }
+
+    private void pollDeviceMode() {
+        BluetoothGatt connection = gatt;
+        if (connection == null || snapshot == null || speechReady) return;
+        if (!settingsBusy() && !catalogSyncBusy) readSettings(value -> {
+            if (value.values()[0] == 1) {
+                snapshotChanged(value);
+                setupSpeech(connection);
+            }
+        });
+        handler.postDelayed(pollMode, 2_000);
+    }
+
+    private void changed() {
+        if (listener != null) listener.run();
+        scheduleReplyWatch();
+    }
+
+    private void scheduleReplyWatch() {
+        handler.removeCallbacks(updateReplyWatch);
+        handler.post(updateReplyWatch);
+    }
+
+    private String replyWatchSession() {
+        if (!speechReady || !audio.supportsPush() || watchChats == null || audio.recordingTurn() || firmware != null ||
+                catalogRefreshing() || phone.echo() ||
+                (!museManaged() && !phone.hasCredential("muse"))) return null;
+        return selectedChatId();
+    }
+
+    private void stopReplyWatch() {
+        handler.removeCallbacks(updateReplyWatch);
+        ++watchGeneration;
+        if (replyWatch != null) replyWatch.cancel();
+        replyWatch = null;
+        watchedSession = null;
+        watchRetryAt = 0;
+        watchRetryDelay = 2_000;
+        externalReplies.clear();
+    }
+
+    private void updateReplyWatch() {
+        String session = replyWatchSession();
+        if (!java.util.Objects.equals(session, watchedSession)) {
+            stopReplyWatch();
+            watchedSession = session;
+        }
+        if (session == null) return;
+        playNextReply();
+        if (replyWatch != null) return;
+        long wait = watchRetryAt - SystemClock.elapsedRealtime();
+        if (wait > 0) {
+            handler.postDelayed(updateReplyWatch, wait);
+            return;
+        }
+        long generation = ++watchGeneration;
+        String access = managedPair == null ? "" : managedPair.access();
+        replyWatch = muse.watch(session, () -> handler.post(() -> {
+            if (generation != watchGeneration) return;
+            watchRetryDelay = 2_000;
+            String detail = "Museの外部返信を待受中 · " + (session.isEmpty() ? "メインチャット" : "選択中のサイドチャット");
+            log.event(ConversationLog.MUSE, detail);
+            Log.i("SumiMuse", detail);
+        }), (id, text) -> handler.post(() -> {
+            if (generation != watchGeneration || !session.equals(replyWatchSession()) || !deliveredReplies.add(id)) return;
+            if (deliveredReplies.size() > 256) deliveredReplies.remove(deliveredReplies.iterator().next());
+            if (externalReplies.size() >= 4) {
+                log.event(ConversationLog.MUSE, "外部返信の再生待ちが満杯です");
+                return;
+            }
+            log.body(ConversationLog.MUSE, "受信 · Museアプリなどからの返信", text);
+            Log.i("SumiMuse", "External reply received (" + text.length() + " characters)");
+            externalReplies.addLast(text);
+            playNextReply();
+        }), reason -> handler.post(() -> {
+            if (generation != watchGeneration) return;
+            replyWatch = null;
+            log.event(ConversationLog.MUSE, "外部返信の待受 · " + reason);
+            Log.i("SumiMuse", "External reply subscription stopped: " + reason);
+            watchRetryAt = SystemClock.elapsedRealtime() + watchRetryDelay;
+            watchRetryDelay = Math.min(30_000, 2 * watchRetryDelay);
+            if (MuseChat.accessRejected(reason) && managedPair != null && !settingsBusy())
+                syncMusePair(access, error -> {
+                    if (generation != watchGeneration || error != null) return;
+                    watchRetryAt = 0;
+                    scheduleReplyWatch();
+                });
+            scheduleReplyWatch();
+        }));
+    }
+
+    private void playNextReply() {
+        if (audio.busy() || settingsBusy() || catalogSyncBusy || externalReplies.isEmpty()) return;
+        String text = externalReplies.removeFirst();
+        audio.push(watchChats, output -> pipeline.playExternal(text, output));
+    }
 
     private Notification notification() {
         var launch = PendingIntent.getActivity(this, 0, new Intent(this, MainActivity.class),
@@ -260,11 +944,16 @@ public final class ConversationService extends Service implements StopwatchAudio
     }
 
     void refreshSettings() {
-        if (!settingPending) readSettings(this::snapshotChanged);
+        if (!settingsBusy() && !catalogSyncBusy) readSettings(this::snapshotChanged);
     }
 
     void updateSetting(int key, int value) {
-        if (gatt == null || snapshot == null || settingPending) return;
+        if (gatt == null || snapshot == null || settingsBusy()) return;
+        if (catalogSyncBusy) {
+            BluetoothGatt connection = gatt;
+            handler.postDelayed(() -> { if (gatt == connection) updateSetting(key, value); }, 120);
+            return;
+        }
         settingPending = true;
         changed();
         settingsSequence = settingsSequence % 65535 + 1;
@@ -284,6 +973,7 @@ public final class ConversationService extends Service implements StopwatchAudio
             }
             settingPending = false;
             snapshotChanged(value);
+            scheduleChatCatalog(120);
             if (value.sequence() != sequence) { stage("設定の保存を確認できませんでした"); return; }
             if (value.result() != 0) {
                 stage(value.result() == 2 ? "会話や設定操作の完了後に変更してください" : "C152に設定を保存できませんでした");
@@ -298,6 +988,8 @@ public final class ConversationService extends Service implements StopwatchAudio
                 audio.reset();
                 audio.features(0);
                 update("Wi-Fiモード · 本体設定を操作できます", "設定に接続");
+                handler.removeCallbacks(pollMode);
+                handler.postDelayed(pollMode, 2_000);
             }
         });
     }
@@ -367,17 +1059,37 @@ public final class ConversationService extends Service implements StopwatchAudio
     }
 
     private void closeLink() {
+        stopReplyWatch();
+        handler.removeCallbacks(probeFirmware);
+        firmwareInfo = null;
+        firmwareProbeBusy = firmwareUnsupported = false;
+        if (firmware != null) {
+            if (firmware.rebooting()) firmware.disconnected = true;
+            else finishFirmware("BLEが切断され、ファームウェア更新を中断しました");
+        }
         stopScan();
         handler.removeCallbacks(reconnect);
         handler.removeCallbacks(operationTimeout);
+        handler.removeCallbacks(retryManagedPair);
+        handler.removeCallbacks(pollMode);
+        handler.removeCallbacks(syncCatalog);
         operations.clear();
         running = null;
         rx = tx = settingsCharacteristic = null;
+        if (museSyncBusy) museSyncStatus = "接続が切れたためMuse認証の同期を中断しました";
+        clearMuseSync();
+        catalogSyncBusy = catalogUnsupported = false;
+        watchChats = null;
+        catalogLinkProblem = "";
+        managedPair = null;
+        Consumer<String> completion = managedCompletion;
+        managedCompletion = null;
         speechReady = settingPending = false;
         snapshot = null;
         if (gatt != null) { gatt.close(); gatt = null; }
         if (audio != null) { audio.reset(); audio.features(0); }
         if (wake.isHeld()) wake.release();
+        if (completion != null) completion.accept(museSyncStatus);
     }
 
     private void disconnect(String message) {
@@ -411,13 +1123,17 @@ public final class ConversationService extends Service implements StopwatchAudio
                     if (connection == gatt && rx == null) disconnect("StopWatchのサービスを読み取れません");
                 }, 15_000);
                 audio.mtu(23);
-                if (!connection.requestMtu(256)) discover(connection);
+                mtu = 23;
+                if (!connection.requestMtu(C152Ota.MTU)) discover(connection);
             });
         }
         @Override public void onMtuChanged(BluetoothGatt connection, int mtu, int code) {
             handler.post(() -> {
                 if (gatt != connection) return;
-                if (code == BluetoothGatt.GATT_SUCCESS) audio.mtu(mtu);
+                if (code == BluetoothGatt.GATT_SUCCESS) {
+                    ConversationService.this.mtu = mtu;
+                    audio.mtu(mtu);
+                }
                 discover(connection);
             });
         }
@@ -439,7 +1155,12 @@ public final class ConversationService extends Service implements StopwatchAudio
                 readSettings(snapshot -> {
                     snapshotChanged(snapshot);
                     if (snapshot.values()[0] == 1) setupSpeech(connection);
-                    else update("本体設定を操作できます", "設定に接続");
+                    else {
+                        update("本体設定を操作できます", "設定に接続");
+                        syncMusePair(null, null);
+                        handler.postDelayed(pollMode, 2_000);
+                    }
+                    scheduleChatCatalog(1_000);
                 });
             });
         }
@@ -467,10 +1188,19 @@ public final class ConversationService extends Service implements StopwatchAudio
                 () -> connection.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE),
                 unused -> write(new AudioPacket(AudioPacket.HELLO, 0, AudioPacket.VERSION), true, () -> {
                     speechReady = true;
+                    handler.removeCallbacks(pollMode);
                     readStatus(packet -> {
-                        if (packet.type() == AudioPacket.REPLY_STATUS && packet.turn() == 0) audio.features(packet.offset());
+                        if (packet.type() == AudioPacket.REPLY_STATUS && packet.turn() == 0) {
+                            audio.features(packet.offset());
+                            if ((packet.offset() & AudioPacket.FEATURE_NOTE_STREAM) != 0)
+                                write(new AudioPacket(AudioPacket.NOTE_STREAM_ENABLE, 0, 0), true, null);
+                        }
+                        if (!audio.supportsPush())
+                            log.event(ConversationLog.BLE, "Museの外部返信を再生するにはC152の更新が必要です");
                         reconnectDelay = 1_000;
                         update("C152の黄ボタンで会話", "会話できます");
+                        syncMusePair(null, null);
+                        handler.postDelayed(probeFirmware, 1_000);
                     });
                 })));
     }
@@ -483,6 +1213,186 @@ public final class ConversationService extends Service implements StopwatchAudio
                     try { receive.accept(DeviceSettings.Snapshot.read(bytes)); }
                     catch (IllegalArgumentException e) { disconnect("C152設定の形式が一致しません"); }
                 }));
+    }
+
+    // OTA shares the authenticated settings characteristic, with its own command namespace.
+    boolean updatingFirmware() { return firmware != null || readingFirmware; }
+
+    boolean canUpdateFirmware() {
+        return speechReady && firmwareInfo != null && firmwareInfo.confirmed() && !settingsBusy() &&
+                !catalogSyncBusy && !catalogRefreshing() && !audio.busy() && !readingFirmware;
+    }
+
+    String firmwareStatus() {
+        if (!firmwareMessage.isEmpty()) return firmwareMessage;
+        if (firmwareUnsupported) return "OTA対応ファームの初回導入はUSBで行います";
+        if (firmwareInfo != null && !firmwareInfo.confirmed()) return "C152の起動確認中…";
+        return "";
+    }
+
+    private void probeFirmware() {
+        if (!speechReady || gatt == null || firmwareUnsupported || firmwareProbeBusy ||
+                (firmware != null && !firmware.rebooting())) return;
+        BluetoothGatt connection = gatt;
+        if (settingPending || museSyncBusy || catalogSyncBusy || audio.busy() ||
+                (firmware != null && SystemClock.elapsedRealtime() < firmware.verifyAfter)) {
+            handler.postDelayed(probeFirmware, 1_000);
+            return;
+        }
+        firmwareProbeBusy = true;
+        IntConsumer failed = code -> {
+            if (connection != gatt) return;
+            firmwareProbeBusy = false;
+            if (firmware == null && (code == 0x06 || code == 0x0d || code == 0x0e)) firmwareUnsupported = true;
+            else handler.postDelayed(probeFirmware, 3_000);
+            changed();
+        };
+        Runnable read = () -> enqueue(new Operation(READ,
+                () -> connection.readCharacteristic(settingsCharacteristic) ? BluetoothStatusCodes.SUCCESS : BluetoothStatusCodes.ERROR_UNKNOWN,
+                value -> {
+                    firmwareProbeBusy = false;
+                    try { firmwareInfo = C152Ota.Info.read(value); }
+                    catch (IllegalArgumentException e) { failed.accept(0x0d); return; }
+                    if (firmware != null && firmwareInfo.error() != 0) {
+                        firmwareWriteFailed(firmware, firmwareInfo.error());
+                    } else if (firmware != null && firmware.disconnected && firmwareInfo.confirmed()) {
+                        Log.i("SumiOta", "Boot readback: old slot=" + firmware.oldSlot + ", running slot=" + firmwareInfo.slot());
+                        if (firmwareInfo.matches(firmware.image, firmware.oldSlot))
+                            finishFirmware("C152の更新と再起動を確認しました");
+                        else finishFirmware("C152は更新前のファームウェアで起動しました");
+                    } else if (firmware != null || !firmwareInfo.confirmed()) handler.postDelayed(probeFirmware, 2_000);
+                    changed();
+                }, failed));
+        writeFirmware(C152Ota.command(C152Ota.INFO, C152Ota.INFO_EXTENDED), read, code -> {
+            if (connection != gatt) return;
+            if (code == 0x06 || code == 0x0d || code == 0x0e)
+                writeFirmware(C152Ota.command(C152Ota.INFO, 0), read, failed);
+            else failed.accept(code);
+        });
+    }
+
+    void importFirmware(Uri uri) {
+        if (!canUpdateFirmware()) return;
+        BluetoothGatt connection = gatt;
+        boolean compression = firmwareInfo.compressed();
+        readingFirmware = true;
+        firmwareMessage = "ファームウェアを読み込み中…";
+        changed();
+        workers.execute(() -> {
+            C152Ota.Image loaded = null;
+            C152Ota.Upload prepared = null;
+            try (var stream = getContentResolver().openInputStream(uri)) {
+                if (stream != null) {
+                    loaded = C152Ota.Image.read(OpenAiAsr.readBounded(stream, C152Ota.MAX_BYTES));
+                    prepared = C152Ota.Upload.prepare(loaded, compression);
+                }
+            } catch (IOException | RuntimeException e) {
+                Log.i("SumiOta", "Firmware import failed: " + e.getClass().getSimpleName());
+            }
+            C152Ota.Image image = loaded;
+            C152Ota.Upload upload = prepared;
+            handler.post(() -> {
+                readingFirmware = false;
+                if (image == null || upload == null) {
+                    firmwareMessage = "対応する署名済みファームウェアを開けませんでした";
+                    changed();
+                } else if (connection != gatt || !canUpdateFirmware()) {
+                    firmwareMessage = "C152の接続と待機状態を確認してからやり直してください";
+                    changed();
+                } else {
+                    var transfer = new FirmwareTransfer(image, upload, firmwareInfo.slot());
+                    firmware = transfer;
+                    wake.acquire(30 * 60_000L);
+                    stopReplyWatch();
+                    connection.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH);
+                    firmwareMessage = "C152で更新準備中…";
+                    changed();
+                    beginFirmware(transfer);
+                }
+            });
+        });
+    }
+
+    private void beginFirmware(FirmwareTransfer transfer) {
+        C152Ota.Upload upload = transfer.upload;
+        int rawLength = transfer.image.data().length;
+        Log.i("SumiOta", "Transfer starting: raw=" + rawLength + " B, wire=" +
+                upload.bytes().length + " B, ATT MTU=" + mtu + ", compressed=" + upload.compressed());
+        int begin = upload.compressed() ? C152Ota.BEGIN_COMPRESSED : C152Ota.BEGIN;
+        writeFirmware(C152Ota.command(begin, rawLength), () -> sendFirmwarePart(transfer), code -> {
+            if (transfer == firmware && code == C152Ota.NO_MEMORY && upload.compressed()) {
+                Log.i("SumiOta", "Compressed OTA buffers unavailable; switching to the raw image");
+                firmware = new FirmwareTransfer(transfer.image,
+                        C152Ota.Upload.prepare(transfer.image, false), transfer.oldSlot);
+                beginFirmware(firmware);
+            } else firmwareWriteFailed(transfer, code);
+        });
+    }
+
+    private void sendFirmwarePart(FirmwareTransfer transfer) {
+        if (transfer != firmware) return;
+        int length = transfer.upload.bytes().length;
+        int progress = (int)((long)transfer.offset * 100 / length);
+        long elapsed = SystemClock.elapsedRealtime() - transfer.started;
+        if (transfer.percent != progress) {
+            transfer.percent = progress;
+            firmwareMessage = "C152へファームウェアを転送中 · " + progress + "%";
+            if (progress >= 5 && progress < 100 && elapsed >= 2_000) {
+                long remaining = elapsed * (length - transfer.offset) / transfer.offset;
+                firmwareMessage += " · 残り約 " + android.text.format.DateUtils.formatElapsedTime((remaining + 999) / 1000);
+            }
+            changed();
+        }
+        if (transfer.offset == length) {
+            Log.i("SumiOta", "Transfer complete: " + length + " B in " + elapsed + " ms");
+            transfer.verifyAfter = SystemClock.elapsedRealtime() + 3_000;
+            firmwareMessage = "署名の検証とC152の再起動を待機中…";
+            changed();
+            handler.postDelayed(firmwareBootTimeout, 330_000);
+            handler.removeCallbacks(probeFirmware);
+            handler.postDelayed(probeFirmware, 3_000);
+            writeFirmware(C152Ota.command(C152Ota.FINISH, transfer.image.data().length),
+                    () -> {}, code -> firmwareWriteFailed(transfer, code));
+            return;
+        }
+        byte[] part = transfer.upload.part(transfer.offset, mtu);
+        writeFirmware(part, () -> {
+            transfer.offset += part.length - C152Ota.HEADER;
+            sendFirmwarePart(transfer);
+        }, code -> firmwareWriteFailed(transfer, code));
+    }
+
+    private void firmwareWriteFailed(FirmwareTransfer transfer, int code) {
+        if (firmware != transfer) return;
+        // FINISH can be committed just before BLE drops. Reconnect and read back the slot in that case.
+        if (transfer.rebooting() && (code == 133 || code == BluetoothStatusCodes.ERROR_UNKNOWN)) return;
+        if (!transfer.rebooting() && gatt != null)
+            writeFirmware(C152Ota.command(C152Ota.ABORT, 0), () -> {}, ignored -> {});
+        finishFirmware(switch (code) {
+            case 0x80 -> "C152の会話や設定が終わってから更新してください";
+            case 0x82 -> "C152がファームウェアの署名またはイメージを拒否しました";
+            default -> "C152のファームウェア更新に失敗しました（BLE " + code + "）";
+        });
+    }
+
+    private void finishFirmware(String message) {
+        firmware = null;
+        handler.removeCallbacks(firmwareBootTimeout);
+        if (wake.isHeld() && !audio.busy()) wake.release();
+        if (gatt != null) gatt.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED);
+        firmwareMessage = message;
+        Log.i("SumiOta", message);
+        log.event(ConversationLog.BLE, message);
+        handler.post(() -> { if (gatt != null && speechReady) syncMusePair(null, null); });
+        changed();
+    }
+
+    private void writeFirmware(byte[] bytes, Runnable done, IntConsumer failed) {
+        BluetoothGatt connection = gatt;
+        BluetoothGattCharacteristic settings = settingsCharacteristic;
+        if (connection == null || settings == null) { failed.accept(BluetoothStatusCodes.ERROR_UNKNOWN); return; }
+        enqueue(new Operation(WRITE, () -> connection.writeCharacteristic(settings, bytes,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT), unused -> done.run(), failed));
     }
 
 
@@ -547,6 +1457,7 @@ public final class ConversationService extends Service implements StopwatchAudio
                 Files.move(temp.toPath(), new File(getFilesDir(), IrodoriTts.MODEL).toPath(),
                         StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 irodori.reload();
+                if (!phone.echo()) irodori.warmUp();
                 handler.post(() -> assetMessage("Irodoriモデルを取り込みました\n" + model.name()));
             } catch (NetworkTask.Failure e) {
                 handler.post(() -> assetMessage(e.getMessage()));
@@ -581,6 +1492,7 @@ public final class ConversationService extends Service implements StopwatchAudio
                 Files.move(ready.toPath(), new File(getFilesDir(), target).toPath(),
                         StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 irodori.reload();
+                if (!phone.echo()) irodori.warmUp();
                 handler.post(() -> assetMessage("すみの参照を取り込みました"));
             } catch (NetworkTask.Failure e) {
                 handler.post(() -> assetMessage(e.getMessage()));
@@ -622,7 +1534,16 @@ public final class ConversationService extends Service implements StopwatchAudio
                 }));
     }
 
-    @Override public void retry(Runnable next) { handler.postDelayed(next, 20); }
+    @Override public void offerPush(AudioPacket packet, Runnable rejected) {
+        BluetoothGatt connection = gatt;
+        BluetoothGattCharacteristic characteristic = rx;
+        if (connection == null || characteristic == null) { rejected.run(); return; }
+        byte[] bytes = packet.encode();
+        enqueue(new Operation(WRITE, () -> connection.writeCharacteristic(characteristic, bytes,
+                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT), unused -> {}, code -> rejected.run()));
+    }
+
+    @Override public void after(Runnable next, long millis) { handler.postDelayed(next, millis); }
 
     private void enqueue(Operation operation) {
         operations.addLast(operation);
@@ -634,7 +1555,13 @@ public final class ConversationService extends Service implements StopwatchAudio
         Operation operation = operations.removeFirst();
         running = operation;
         if (operation.start().getAsInt() != BluetoothStatusCodes.SUCCESS) {
-            disconnect("StopWatchへの通信を開始できません"); return;
+            if (operation.failure() == null) disconnect("StopWatchへの通信を開始できません");
+            else {
+                running = null;
+                operation.failure().accept(BluetoothStatusCodes.ERROR_UNKNOWN);
+                startNext();
+            }
+            return;
         }
         handler.postDelayed(operationTimeout, 25000);
     }
@@ -644,8 +1571,9 @@ public final class ConversationService extends Service implements StopwatchAudio
         handler.removeCallbacks(operationTimeout);
         Operation operation = running;
         running = null;
-        if (code != BluetoothGatt.GATT_SUCCESS) { disconnect("StopWatchとの通信でエラーが発生しました（" + code + "）"); return; }
-        operation.complete().accept(value);
+        if (code == BluetoothGatt.GATT_SUCCESS) operation.complete().accept(value);
+        else if (operation.failure() != null) operation.failure().accept(code);
+        else { disconnect("StopWatchとの通信でエラーが発生しました（" + code + "）"); return; }
         startNext();
     }
 

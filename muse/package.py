@@ -11,22 +11,33 @@ def package():
     build = Path(os.environ.get('SUMI_BUILD_DIR', ROOT / 'build')).resolve()
     dest = Path(os.environ.get('SUMI_DIST_DIR', ROOT / 'dist')).resolve()
     config = (build / 'sdkconfig').read_text()
+    ota = os.environ.get('SUMI_OTA') == '1'
     required = ['CONFIG_MUSE_BOARD_M5STACK_STOPWATCH=y', 'CONFIG_MUSE_REALTIME_VOICE=y',
                 'CONFIG_MUSE_CJK_FONT=y', 'CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y',
                 'CONFIG_MUSE_STATIC_BUFFERS_IN_PSRAM=y',
                 'CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=0']
+    if ota:
+        required.extend(['CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_sumi_ota.csv"',
+                         'CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y',
+                         'CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y',
+                         'CONFIG_SECURE_BOOT_SIGNING_KEY=' + json.dumps(os.environ['SUMI_OTA_SIGNING_KEY'], ensure_ascii=False)])
+    else:
+        required.append('CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_sumi.csv"')
     if any(s not in config for s in required) or '\nCONFIG_SECURE_BOOT=y' in config:
         raise RuntimeError('Unexpected target/security configuration; package aborted')
     dest.mkdir(parents=True, exist_ok=True)
     source_files = [(0, build / 'bootloader/bootloader.bin', 'bootloader.bin', 0x10000),
         (0x10000, build / 'partition_table/partition-table.bin', 'partition-table.bin', 0x1000),
         (0x1D000, build / 'ota_data_initial.bin', 'ota_data_initial.bin', 0x2000),
-        (0x20000, build / 'muse-gadget.bin', 'sumi-muse.bin', 0x800000),
+        (0x20000, build / 'muse-gadget.bin', 'sumi-muse.bin', 0x400000 if ota else 0x800000),
         (0x830000, ROOT / '.cache/dict.bin', 'dict.bin', 0x680000)]
     manifest = {'sdk_revision': REV, 'idf_version': '6.0.3', 'chip': 'esp32s3', 'flash_size': '16MB',
         'status': 'built; flashing and pairing are separate steps', 'images': [],
         'preserve': ['prod_data at 0x820000', 'prod_bak at 0x821000'],
         'migration': 'Back up the entire 16MB flash first. New NVS layout requires initialization. See README.md.'}
+    if ota:
+        source_files.append((0xEB0000, ROOT / '.cache/sumi-assets-ota.bin', 'sumi-assets.bin', 0x150000))
+        manifest['migration'] = 'For an existing Sumi build preserve NVS, PHY, dictionary and product data. See README.md.'
     for address, source, name, maximum in source_files:
         data = source.read_bytes()
         if len(data) > maximum: raise RuntimeError(f'{name} exceeds its partition')

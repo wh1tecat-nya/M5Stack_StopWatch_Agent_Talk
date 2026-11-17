@@ -46,6 +46,9 @@ static muse_mode_t previous_mode = MUSE_MODE_BOOT;
 static char text[MUSE_CAPTION_MAX];
 static int times[3] = {30, 60, 60}, avatar_light = 25, badge_light = 25;
 static int page = -1;
+static uint32_t shown_chat_catalog;
+static int chat_page;
+#define CHAT_PAGE_SIZE 6
 static uint32_t charge_deadline;
 static bool charge_restore_pending;
 enum { WIFI_NETWORKS = 7, WIFI_SETUP = 9, WIFI_NETWORK = 22, WIFI_DELETE = 23, WIFI_RESULT = 24 };
@@ -150,11 +153,14 @@ int sumi_ui_apply_setting(unsigned key, int32_t value) {
         if (value != 0 && value != 1) return 3;
         return sumi_phone_set_mode(value != 0) ? 0 : 4;
     case SUMI_SETTING_CHAT:
+        if (value < 0 || value >= sumi_chat_count()) return 3;
+        if (!sumi_chat_select(value)) return 4;
+        if (page == 12) show_page(12);
+        return 0;
     case SUMI_SETTING_WEARABLE:
         if (value != 0 && value != 1) return 3;
-        if (!save(key == SUMI_SETTING_CHAT ? "chat" : "wearable", value)) return 4;
-        if (key == SUMI_SETTING_CHAT) sumi_chat_select(value);
-        else sumi_chat_set_wearable(value);
+        if (!save("wearable", value)) return 4;
+        sumi_chat_set_wearable(value);
         return 0;
     case SUMI_SETTING_VOLUME:
         if (value < 0 || value > 100) return 3;
@@ -221,8 +227,15 @@ static void choose(lv_event_t *e) {
         muse_settings_set_speaker_on(true);
         show_page(-1);
     } else if (page == 12) {
+        if (v < 0) {
+            chat_page += v == -1 ? -1 : 1;
+            show_page(12);
+            return;
+        }
+        if (shown_chat_catalog != sumi_chat_catalog_hash()) { show_page(12); return; }
         if (voice_busy() || muse_voice_notes_waiting()) { lv_label_set_text(value, "会話・未送信の音声が\nなくなってから変更できます"); return; }
-        sumi_chat_select(v); save("chat", v); show_page(-1);
+        if (!sumi_chat_select(v)) { lv_label_set_text(value, "会話先を保存できません"); return; }
+        show_page(-1);
     } else if (page == 13) {
         if (voice_busy() || muse_voice_notes_waiting()) return;
         sumi_mic_test_request();
@@ -271,8 +284,13 @@ static void choose(lv_event_t *e) {
         }
         show_page(20);
     } else if (page == 21) {
-        sumi_phone_open_settings();
-        lv_label_set_text(value, "5分間、スマホから\n設定を変更できます");
+        if (v) {
+            sumi_phone_allow_muse_sync();
+            lv_label_set_text(value, "5分間、スマホから\nMuse認証を同期できます");
+        } else {
+            sumi_phone_open_settings();
+            lv_label_set_text(value, "5分間、スマホから\n設定を変更できます");
+        }
     } else if (page == 8) {
         sumi_input_end_call(); show_page(-1);
     } else show_page(v);
@@ -360,6 +378,7 @@ static void go_back(lv_event_t *e) {
            lv_obj_add_flag(back, LV_OBJ_FLAG_HIDDEN); set_screen(SUMI_BADGE); }
 }
 static void show_page(int which) {
+    if (which == 12 && page != 12) chat_page = sumi_chat_selected() / CHAT_PAGE_SIZE;
     page = which; lv_obj_clean(panel); value = NULL;
     if (which < 0) {
         label(panel, "設定", 3, 280);
@@ -374,7 +393,11 @@ static void show_page(int which) {
         for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); ++i) {
             int item = order[i]; char title[96];
             if (phone && (item == WIFI_NETWORKS || item == 10 || item == 17)) continue;
-            if (item == 12) snprintf(title, sizeof(title), "会話先: %s", sumi_chat_selected() ? "M5Stack" : "メイン");
+            if (item == 12) {
+                char chat[SUMI_CHAT_TITLE_BYTES + 1];
+                sumi_chat_title(sumi_chat_selected(), chat);
+                snprintf(title, sizeof(title), "会話先 %s", chat);
+            }
             else if (item == 19) snprintf(title, sizeof(title), "送信設定: %s", sumi_chat_wearable() ? "ON" : "OFF");
             else if (item == 17) snprintf(title, sizeof(title), "音声認識: %s", sumi_asr_enabled() ? "OpenAI" : "Muse");
             else if (item == 20) snprintf(title, sizeof(title), "接続モード: %s", phone ? "BLE" : "Wi-Fi");
@@ -414,9 +437,34 @@ static void show_page(int which) {
         label(panel, "Museとの音声通話を終了します。", 82, 320);
         button(panel, "通話を終了", 174, 260, choose, 0);
     } else if (which == 12) {
-        button(panel, "M5Stack会話用", 56, 300, choose, 1);
-        button(panel, "メインチャット", 132, 300, choose, 0);
-        value = label(panel, sumi_chat_selected() ? "選択中: M5Stack会話用" : "選択中: メインチャット", 222, 320);
+        shown_chat_catalog = sumi_chat_catalog_hash();
+        int choice = sumi_chat_selected();
+        int count = sumi_chat_count();
+        int last = (count - 1) / CHAT_PAGE_SIZE;
+        if (chat_page < 0) chat_page = 0;
+        if (chat_page > last) chat_page = last;
+        lv_obj_t *list = lv_obj_create(panel); plain(list);
+        lv_obj_set_pos(list, 0, 49); lv_obj_set_size(list, 340, last ? 165 : 205);
+        lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scroll_dir(list, LV_DIR_VER);
+        lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_ACTIVE);
+        int first = chat_page * CHAT_PAGE_SIZE;
+        for (int i = first; i < count && i < first + CHAT_PAGE_SIZE; ++i) {
+            char chat[SUMI_CHAT_TITLE_BYTES + 1], title[SUMI_CHAT_TITLE_BYTES + 8];
+            sumi_chat_title(i, chat);
+            snprintf(title, sizeof(title), "%s%s", i == choice ? "● " : "", chat);
+            lv_obj_t *row = button(list, title, 4 + (i - first) * 67, 300, choose, i);
+            lv_obj_t *caption = lv_obj_get_child(row, 0);
+            lv_obj_set_style_text_font(caption, &font, 0);
+            lv_label_set_long_mode(caption, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_height(caption, 42);
+        }
+        if (last) {
+            if (chat_page > 0) lv_obj_set_x(button(panel, "前へ", 226, 105, choose, -1), -108);
+            if (chat_page < last) lv_obj_set_x(button(panel, "次へ", 226, 105, choose, -2), 108);
+            value = label(panel, "", 247, 100);
+            lv_label_set_text_fmt(value, "%d / %d", chat_page + 1, last + 1);
+        } else value = label(panel, "一覧はスマホから更新", 256, 320);
     } else if (which == 13) {
         label(panel, "5秒間録音し、再生します\nMuseには送信しません", 66, 320);
         button(panel, "録音テストを開始", 180, 300, choose, 0);
@@ -455,8 +503,9 @@ static void show_page(int which) {
         value = label(panel, sumi_phone_mode() ? "選択中: BLE\nスマホのIrodoriで読み上げ" :
             "選択中: Wi-Fi\n本体のsanoTTSで読み上げ", 216, 320);
     } else if (which == 21) {
-        button(panel, "スマホ接続を開始", 75, 300, choose, 0);
-        value = label(panel, "スマホアプリから\n本体設定を変更できます", 178, 320);
+        button(panel, "スマホ接続を開始", 56, 300, choose, 0);
+        button(panel, "Muse認証の同期を許可", 132, 300, choose, 1);
+        value = label(panel, "スマホアプリから\n本体設定を変更できます", 212, 320);
     } else if (which == WIFI_NETWORK || which == WIFI_DELETE) {
         lv_obj_t *ssid = label(panel, wifi_selection, 48, 320);
         lv_obj_set_style_text_font(ssid, &font, 0);
@@ -492,6 +541,7 @@ static void ellipse(int x, int y, int rx, int ry, uint16_t color) {
     }
 }
 static void draw_avatar(muse_mode_t mode, uint32_t now) {
+    if (!sumi_ui_ready()) return;
     static bool valid, last_blink, last_thinking;
     static int last_mouth;
     bool thinking = mode == MUSE_MODE_THINKING;
@@ -517,7 +567,12 @@ static void draw_avatar(muse_mode_t mode, uint32_t now) {
     }
     lv_obj_invalidate(root);  /* Whole-panel repaint avoids AMOLED partial-flush seams. */
 }
+static atomic_bool ui_ready;
+
+bool sumi_ui_ready(void) { return atomic_load(&ui_ready); }
+
 void sumi_ui_init(void) {
+    bool assets_loaded = sumi_assets_load();
     sumi_asr_init();
     have_settings = nvs_open("sumi-muse", NVS_READWRITE, &settings) == ESP_OK;
     if (!load("configured", 0, 0, 1)) {
@@ -529,7 +584,7 @@ void sumi_ui_init(void) {
     times[0] = load("avatar_s", 30, 15, 60); times[1] = load("badge_s", 60, 15, 60); times[2] = load("dim_s", 60, 15, 60);
     for (int i = 0; i < 3; ++i) if (times[i] % 15) times[i] = 30;
     sumi_tts_set_rate(load("tts_rate", 80, 60, 120));
-    sumi_chat_select(load("chat", 1, 0, 1));
+    sumi_chat_init(load("chat", 1, 0, 1));
     sumi_chat_set_wearable(load("wearable", 1, 0, 1) != 0);
     int charge = load("charge_ma", 425, 185, 425);
     sumi_charge_set_current(charge == 185 ? 185 : 425);
@@ -546,7 +601,9 @@ void sumi_ui_init(void) {
     badge.header.magic = LV_IMAGE_HEADER_MAGIC; badge.header.cf = LV_COLOR_FORMAT_RGB565;
     badge.header.w = badge.header.h = 400; badge.header.stride = 800;
     badge.data_size = 400 * 400 * 2; badge.data = (const uint8_t *)sumi_badge;
-    badge_image = lv_image_create(root); lv_image_set_src(badge_image, &badge); lv_obj_center(badge_image);
+    badge_image = lv_image_create(root);
+    if (assets_loaded) lv_image_set_src(badge_image, &badge);
+    lv_obj_center(badge_image);
     lv_obj_remove_flag(badge_image, LV_OBJ_FLAG_CLICKABLE);
     clock_label = label(root, "--:--", 73, 300);
     lv_obj_set_style_text_font(clock_label, &sumi_clock_64, 0);
@@ -572,9 +629,11 @@ void sumi_ui_init(void) {
     lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN); lv_obj_add_flag(back, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN); started = now_ms();
     muse_state_set_page(36, 2); muse_state_set_cjk_page(18, 2); muse_state_set_latin_page(36, 2);
+    atomic_store(&ui_ready, assets_loaded);
 }
 void sumi_ui_prepare(void) {
     sumi_phone_apply_setting();
+    if (page == 12 && value && shown_chat_catalog != sumi_chat_catalog_hash()) show_page(12);
     restore_charging(); /* Also while hidden, asleep or disconnected from Muse. */
     sumi_clock_poll(muse_wifi_connected());
     static sumi_noise_state_t noise_previous = SUMI_NOISE_IDLE;

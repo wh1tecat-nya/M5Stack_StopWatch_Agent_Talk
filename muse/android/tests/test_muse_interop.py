@@ -19,6 +19,47 @@ from musegadget.noise.transport import decode_request_envelope, encode_response_
 
 
 class MuseInterop(unittest.TestCase):
+    def test_c152_ota_compression(self):
+        java_home = os.environ.get('JAVA_HOME')
+        java = Path(java_home, 'bin/java') if java_home else 'java'
+        javac = Path(java_home, 'bin/javac') if java_home else 'javac'
+        sources = ANDROID / 'src/jp/sumi/stopwatch'
+        with tempfile.TemporaryDirectory() as classes:
+            subprocess.run([javac, '--release', '17', '-d', classes, sources / 'AudioPacket.java',
+                            sources / 'C152Ota.java', ANDROID / 'tests/C152OtaTest.java'], check=True)
+            subprocess.run([java, '-cp', classes, 'jp.sumi.stopwatch.C152OtaTest'], check=True)
+
+    def test_network_cancellation_closes_off_caller_thread(self):
+        java_home = os.environ.get('JAVA_HOME')
+        java = Path(java_home, 'bin/java') if java_home else 'java'
+        javac = Path(java_home, 'bin/javac') if java_home else 'javac'
+        sources = ANDROID / 'src/jp/sumi/stopwatch'
+        with tempfile.TemporaryDirectory() as classes:
+            subprocess.run([javac, '--release', '17', '-d', classes, sources / 'SpeechBackend.java',
+                            sources / 'NetworkTask.java', ANDROID / 'tests/NetworkTaskCancellationTest.java'], check=True)
+            subprocess.run([java, '-cp', classes, 'jp.sumi.stopwatch.NetworkTaskCancellationTest'], check=True)
+
+    def test_muse_access_chunks(self):
+        java_home = os.environ.get('JAVA_HOME')
+        java = Path(java_home, 'bin/java') if java_home else 'java'
+        javac = Path(java_home, 'bin/javac') if java_home else 'javac'
+        with tempfile.TemporaryDirectory() as classes:
+            subprocess.run([javac, '--release', '17', '-d', classes,
+                            ANDROID / 'src/jp/sumi/stopwatch/MuseAccessSync.java',
+                            ANDROID / 'src/jp/sumi/stopwatch/MusePair.java',
+                            ANDROID / 'tests/MuseAccessSyncTest.java'], check=True)
+            subprocess.run([java, '-cp', classes, 'jp.sumi.stopwatch.MuseAccessSyncTest'], check=True)
+
+    def test_pcm_prefix(self):
+        java_home = os.environ.get('JAVA_HOME')
+        java = Path(java_home, 'bin/java') if java_home else 'java'
+        javac = Path(java_home, 'bin/javac') if java_home else 'javac'
+        sources = ANDROID / 'src/jp/sumi/stopwatch'
+        with tempfile.TemporaryDirectory() as classes:
+            subprocess.run([javac, '--release', '17', '-d', classes, sources / 'SpeechBackend.java',
+                            sources / 'Pcm.java', ANDROID / 'tests/PcmPrefixTest.java'], check=True)
+            subprocess.run([java, '-cp', classes, 'jp.sumi.stopwatch.PcmPrefixTest'], check=True)
+
     def test_context_footer(self):
         java_home = os.environ.get('JAVA_HOME')
         java = Path(java_home, 'bin/java') if java_home else 'java'

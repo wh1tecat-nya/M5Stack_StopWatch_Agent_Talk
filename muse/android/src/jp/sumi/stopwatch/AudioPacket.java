@@ -11,7 +11,11 @@ record AudioPacket(int type, int turn, int offset, byte[] data) {
     static final int REPLY_BEGIN = 6, REPLY_PCM = 7, REPLY_END = 8, CANCEL = 9, ERROR = 10, REPLY_STATUS = 11;
     static final int CAPTION = 12;
     static final int GENERATING = 13;
-    static final int STREAM_LENGTH = -1, FEATURE_STREAM = 1;
+    static final int NOTE_SCOPE = 14;
+    static final int PUSH_BEGIN = 15, PUSH_READY = 16, PUSH_DONE = 17;
+    static final int NOTE_STREAM_ENABLE = 18, REPLY_PLAY = 19;
+    static final int STREAM_LENGTH = -1, REPLY_PREFILL_LENGTH = -2;
+    static final int FEATURE_STREAM = 1, FEATURE_PUSH = 2, FEATURE_NOTE_STREAM = 4, FEATURE_REPLY_PREFILL = 8;
     static final int MAX_REPLY = 120 * 32000;
     static final int MAX_NOTE = 15 * 32000;
     private static final byte[] EMPTY = {};
