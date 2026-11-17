@@ -154,14 +154,17 @@ public final class ConversationService extends Service implements StopwatchAudio
         final C152Ota.Image image;
         final C152Ota.Upload upload;
         final int oldSlot;
+        final boolean windowed;
         final long started = SystemClock.elapsedRealtime();
         int offset, percent = -1;
+        int windowRetries;
         long verifyAfter;
-        boolean disconnected;
-        FirmwareTransfer(C152Ota.Image image, C152Ota.Upload upload, int oldSlot) {
+        boolean disconnected, acknowledgeData;
+        FirmwareTransfer(C152Ota.Image image, C152Ota.Upload upload, int oldSlot, boolean windowed) {
             this.image = image;
             this.upload = upload;
             this.oldSlot = oldSlot;
+            this.windowed = windowed;
         }
         boolean rebooting() { return verifyAfter != 0; }
     }
@@ -1263,10 +1266,14 @@ public final class ConversationService extends Service implements StopwatchAudio
                     } else if (firmware != null || !firmwareInfo.confirmed()) handler.postDelayed(probeFirmware, 2_000);
                     changed();
                 }, failed));
-        writeFirmware(C152Ota.command(C152Ota.INFO, C152Ota.INFO_EXTENDED), read, code -> {
+        readFirmwareInfo(connection, C152Ota.INFO_WINDOW, read, failed);
+    }
+
+    private void readFirmwareInfo(BluetoothGatt connection, int capability, Runnable read, IntConsumer failed) {
+        writeFirmware(C152Ota.command(C152Ota.INFO, capability), read, code -> {
             if (connection != gatt) return;
-            if (code == 0x06 || code == 0x0d || code == 0x0e)
-                writeFirmware(C152Ota.command(C152Ota.INFO, 0), read, failed);
+            if (capability > 0 && (code == 0x06 || code == 0x0d || code == 0x0e))
+                readFirmwareInfo(connection, capability - 1, read, failed);
             else failed.accept(code);
         });
     }
@@ -1300,7 +1307,9 @@ public final class ConversationService extends Service implements StopwatchAudio
                     firmwareMessage = "C152の接続と待機状態を確認してからやり直してください";
                     changed();
                 } else {
-                    var transfer = new FirmwareTransfer(image, upload, firmwareInfo.slot());
+                    boolean windowed = upload.compressed() && firmwareInfo.windowed() &&
+                            (rx.getProperties() & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0;
+                    var transfer = new FirmwareTransfer(image, upload, firmwareInfo.slot(), windowed);
                     firmware = transfer;
                     wake.acquire(30 * 60_000L);
                     stopReplyWatch();
@@ -1317,13 +1326,15 @@ public final class ConversationService extends Service implements StopwatchAudio
         C152Ota.Upload upload = transfer.upload;
         int rawLength = transfer.image.data().length;
         Log.i("SumiOta", "Transfer starting: raw=" + rawLength + " B, wire=" +
-                upload.bytes().length + " B, ATT MTU=" + mtu + ", compressed=" + upload.compressed());
-        int begin = upload.compressed() ? C152Ota.BEGIN_COMPRESSED : C152Ota.BEGIN;
+                upload.bytes().length + " B, ATT MTU=" + mtu + ", compressed=" + upload.compressed() +
+                ", windowed=" + transfer.windowed);
+        int begin = transfer.windowed ? C152Ota.BEGIN_WINDOW :
+                upload.compressed() ? C152Ota.BEGIN_COMPRESSED : C152Ota.BEGIN;
         writeFirmware(C152Ota.command(begin, rawLength), () -> sendFirmwarePart(transfer), code -> {
             if (transfer == firmware && code == C152Ota.NO_MEMORY && upload.compressed()) {
                 Log.i("SumiOta", "Compressed OTA buffers unavailable; switching to the raw image");
                 firmware = new FirmwareTransfer(transfer.image,
-                        C152Ota.Upload.prepare(transfer.image, false), transfer.oldSlot);
+                        C152Ota.Upload.prepare(transfer.image, false), transfer.oldSlot, false);
                 beginFirmware(firmware);
             } else firmwareWriteFailed(transfer, code);
         });
@@ -1355,11 +1366,63 @@ public final class ConversationService extends Service implements StopwatchAudio
                     () -> {}, code -> firmwareWriteFailed(transfer, code));
             return;
         }
+        if (transfer.windowed) {
+            sendFirmwareWindowPart(transfer, transfer.offset, transfer.upload.windowEnd(transfer.offset, mtu));
+            return;
+        }
         byte[] part = transfer.upload.part(transfer.offset, mtu);
         writeFirmware(part, () -> {
             transfer.offset += part.length - C152Ota.HEADER;
             sendFirmwarePart(transfer);
         }, code -> firmwareWriteFailed(transfer, code));
+    }
+
+    private void sendFirmwareWindowPart(FirmwareTransfer transfer, int offset, int end) {
+        if (transfer != firmware) return;
+        if (offset == end) {
+            confirmFirmwareWindow(transfer, end, 0);
+            return;
+        }
+        byte[] part = transfer.upload.part(offset, mtu, end);
+        int type = transfer.acknowledgeData ? BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT :
+                BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;
+        writeFirmware(rx, part, type,
+                () -> sendFirmwareWindowPart(transfer, offset + part.length - C152Ota.HEADER, end),
+                code -> confirmFirmwareWindow(transfer, end, 0));
+    }
+
+    private void confirmFirmwareWindow(FirmwareTransfer transfer, int end, int polls) {
+        BluetoothGatt connection = gatt;
+        BluetoothGattCharacteristic characteristic = tx;
+        if (transfer != firmware || connection == null || characteristic == null) return;
+        enqueue(new Operation(READ,
+                () -> connection.readCharacteristic(characteristic) ? BluetoothStatusCodes.SUCCESS : BluetoothStatusCodes.ERROR_UNKNOWN,
+                value -> {
+                    if (transfer != firmware) return;
+                    C152Ota.Progress progress;
+                    try { progress = C152Ota.Progress.read(value, transfer.offset, end); }
+                    catch (IllegalArgumentException e) { firmwareWriteFailed(transfer, C152Ota.BAD_PROGRESS); return; }
+                    if (progress.error() != 0) {
+                        firmwareWriteFailed(transfer, progress.error());
+                    } else if (progress.received() == end) {
+                        transfer.offset = end;
+                        transfer.windowRetries = 0;
+                        sendFirmwarePart(transfer);
+                    } else if (polls < 2) {
+                        handler.postDelayed(() -> confirmFirmwareWindow(transfer, end, polls + 1), 40);
+                    } else if (++transfer.windowRetries <= 3) {
+                        Log.i("SumiOta", "Retrying OTA window from " + progress.received() + " of " + end);
+                        if (transfer.windowRetries >= 2 && !transfer.acknowledgeData) {
+                            transfer.acknowledgeData = true;
+                            Log.i("SumiOta", "Using acknowledged BLE writes after repeated gaps");
+                        }
+                        transfer.offset = progress.received();
+                        sendFirmwareWindowPart(transfer, transfer.offset, end);
+                    } else firmwareWriteFailed(transfer, C152Ota.BAD_PROGRESS);
+                }, code -> {
+                    if (polls < 2) handler.postDelayed(() -> confirmFirmwareWindow(transfer, end, polls + 1), 40);
+                    else firmwareWriteFailed(transfer, code);
+                }));
     }
 
     private void firmwareWriteFailed(FirmwareTransfer transfer, int code) {
@@ -1371,6 +1434,7 @@ public final class ConversationService extends Service implements StopwatchAudio
         finishFirmware(switch (code) {
             case 0x80 -> "C152の会話や設定が終わってから更新してください";
             case 0x82 -> "C152がファームウェアの署名またはイメージを拒否しました";
+            case C152Ota.BAD_PROGRESS -> "C152の受信位置を確認できず、更新を中断しました";
             default -> "C152のファームウェア更新に失敗しました（BLE " + code + "）";
         });
     }
@@ -1388,11 +1452,15 @@ public final class ConversationService extends Service implements StopwatchAudio
     }
 
     private void writeFirmware(byte[] bytes, Runnable done, IntConsumer failed) {
+        writeFirmware(settingsCharacteristic, bytes, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT, done, failed);
+    }
+
+    private void writeFirmware(BluetoothGattCharacteristic characteristic, byte[] bytes, int type,
+                               Runnable done, IntConsumer failed) {
         BluetoothGatt connection = gatt;
-        BluetoothGattCharacteristic settings = settingsCharacteristic;
-        if (connection == null || settings == null) { failed.accept(BluetoothStatusCodes.ERROR_UNKNOWN); return; }
-        enqueue(new Operation(WRITE, () -> connection.writeCharacteristic(settings, bytes,
-                BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT), unused -> done.run(), failed));
+        if (connection == null || characteristic == null) { failed.accept(BluetoothStatusCodes.ERROR_UNKNOWN); return; }
+        enqueue(new Operation(WRITE, () -> connection.writeCharacteristic(characteristic, bytes, type),
+                unused -> done.run(), failed));
     }
 
 

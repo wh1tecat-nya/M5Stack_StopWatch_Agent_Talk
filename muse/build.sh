@@ -30,7 +30,7 @@ source "$IDF_PATH/export.sh"
 set -u
 idf.py --version | grep -q '6\.0\.3' || { echo 'Use ESP-IDF 6.0.3.' >&2; exit 1; }
 SUMI_CONFIGS='sdkconfig.defaults;devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-stopwatch;sdkconfig.sumi'
-build_options=("-DPROJECT_VER=${SUMI_OTA_VERSION:-0.1.6}")
+build_options=("-DPROJECT_VER=${SUMI_OTA_VERSION:-0.1.7}")
 if [[ "${SUMI_OTA:-0}" == 1 ]]; then
     export SUMI_OTA_SIGNING_KEY="${SUMI_OTA_SIGNING_KEY:-$SUMI_ROOT/.cache/ota-signing/c152.pem}"
     if [[ ! -f "$SUMI_OTA_SIGNING_KEY" ]]; then

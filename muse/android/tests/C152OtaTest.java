@@ -61,6 +61,29 @@ public final class C152OtaTest {
         check(!C152Ota.Info.read(status).compressed(), "Legacy capability");
         status[0] = 3;
         check(C152Ota.Info.read(status).compressed(), "Compressed transfer capability");
+        check(!C152Ota.Info.read(status).windowed(), "Compressed-only firmware remains compatible");
+        status[0] = 4;
+        check(C152Ota.Info.read(status).compressed() && C152Ota.Info.read(status).windowed(), "Window capability");
+        check(new C152Ota.Upload(new byte[25000], true).windowEnd(1000, 517) == 1000 + 24 * 506,
+                "Window respects the negotiated payload size");
+        check(fast.windowEnd(0, 517) == fast.bytes().length, "Final window is bounded by the file");
+        check(fast.part(0, 517, 100).length == C152Ota.HEADER + 100, "Packet is bounded by the window");
+        byte[] progress = Arrays.copyOf(C152Ota.command(C152Ota.PROGRESS, 17), 7);
+        check(C152Ota.Progress.read(progress, 16, 24).received() == 17, "Partial acknowledgement");
+        progress[6] = (byte) 0x82;
+        check(C152Ota.Progress.read(progress, 16, 24).error() == 0x82, "Unsigned error");
+        rejectProgress(progress, 18, 24);
+        rejectProgress(progress, 0, 16);
+        rejectProgress(Arrays.copyOf(progress, 6), 0, 24);
+    }
+
+    private static void rejectProgress(byte[] data, int confirmed, int end) {
+        try {
+            C152Ota.Progress.read(data, confirmed, end);
+        } catch (IllegalArgumentException expected) {
+            return;
+        }
+        throw new AssertionError("Invalid progress accepted");
     }
 
     private static void check(boolean valid, String message) {
