@@ -17,7 +17,7 @@
 #include <stdatomic.h>
 #include <string.h>
 
-enum { OTA_INFO = 1, OTA_BEGIN, OTA_DATA, OTA_FINISH, OTA_ABORT, OTA_BEGIN_COMPRESSED };
+enum { OTA_INFO = 1, OTA_BEGIN, OTA_DATA, OTA_FINISH, OTA_ABORT, OTA_BEGIN_COMPRESSED, OTA_BEGIN_WINDOW, OTA_PROGRESS };
 enum { OTA_BUSY = 0x80, OTA_FAILED, OTA_BAD_IMAGE, OTA_NO_MEMORY };
 #define SLOT_BYTES 0x400000u
 #define HEADER 6u
@@ -27,6 +27,8 @@ enum { OTA_BUSY = 0x80, OTA_FAILED, OTA_BAD_IMAGE, OTA_NO_MEMORY };
 // The BLE host owns the upload until FINISH hands it to the verification task.
 static esp_ota_handle_t handle;
 static bool open;
+static bool window_mode;
+static uint8_t window_error;
 static uint8_t info_version;
 static const esp_partition_t *target;
 static uint32_t declared, written, received;
@@ -70,7 +72,13 @@ static void abort_upload(void)
 void sumi_ota_disconnect(void)
 {
     info_version = 0;
+    window_mode = false;
     if (!atomic_load(&finalizing) && !atomic_load(&rebooting)) abort_upload();
+}
+
+static uint32_t packet_argument(const uint8_t *data)
+{
+    return data[2] | (uint32_t)data[3] << 8 | (uint32_t)data[4] << 16 | (uint32_t)data[5] << 24;
 }
 
 static bool receive_compressed(const uint8_t *data, size_t length)
@@ -161,10 +169,10 @@ int sumi_ota_command(const uint8_t *data, size_t size, bool idle)
 {
     if (size < HEADER || size > SUMI_OTA_PACKET_MAX || data[0] != SUMI_OTA_TAG)
         return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
-    uint32_t arg = data[2] | (uint32_t)data[3] << 8 | (uint32_t)data[4] << 16 | (uint32_t)data[5] << 24;
+    uint32_t arg = packet_argument(data);
     size_t payload = size - HEADER;
-    if (data[1] == OTA_INFO && arg <= 1 && !payload && update_slot()) {
-        info_version = arg ? 3 : 2;
+    if (data[1] == OTA_INFO && arg <= 2 && !payload && update_slot()) {
+        info_version = 2 + arg;
         return 0;
     }
     if (atomic_load(&finalizing) || atomic_load(&rebooting)) return OTA_BUSY;
@@ -172,11 +180,12 @@ int sumi_ota_command(const uint8_t *data, size_t size, bool idle)
     switch (data[1]) {
     case OTA_BEGIN:
     case OTA_BEGIN_COMPRESSED:
+    case OTA_BEGIN_WINDOW:
         if (payload || arg < 8192 || arg > SLOT_BYTES) break;
         if (!idle || open || !sumi_ui_ready() || !running_valid()) return OTA_BUSY;
         target = update_slot();
         if (!target) return OTA_FAILED;
-        if (data[1] == OTA_BEGIN_COMPRESSED) {
+        if (data[1] != OTA_BEGIN) {
             compressed = heap_caps_calloc(1, sizeof(*compressed), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
             if (compressed) compressed->decoded = heap_caps_malloc_prefer(BLOCK_BYTES, 2,
                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -191,6 +200,8 @@ int sumi_ota_command(const uint8_t *data, size_t size, bool idle)
             return OTA_FAILED;
         }
         open = true;
+        window_mode = data[1] == OTA_BEGIN_WINDOW;
+        window_error = 0;
         declared = arg;
         received = written = 0;
         atomic_store(&completion, 0);
@@ -215,7 +226,8 @@ int sumi_ota_command(const uint8_t *data, size_t size, bool idle)
         atomic_store(&deadline, now_ms() + IDLE_MS);
         return 0;
     case OTA_FINISH:
-        if (!open || payload || arg != declared || written != declared) break;
+        if (!open || window_error || payload || arg != declared || written != declared) break;
+        window_mode = false;
         release_compressed();
         atomic_store(&finalizing, true);
         if (xTaskCreate(finalize_task, "sumi_ota", 16384, NULL, 5, NULL) != pdPASS) {
@@ -227,9 +239,43 @@ int sumi_ota_command(const uint8_t *data, size_t size, bool idle)
     case OTA_ABORT:
         if (payload || arg) break;
         abort_upload();
+        window_mode = false;
+        window_error = 0;
         return 0;
     }
     return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+}
+
+int sumi_ota_window_data(const uint8_t *data, size_t size)
+{
+    if (!window_mode) return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
+    if (window_error) return window_error;
+    if (size <= HEADER || size > SUMI_OTA_PACKET_MAX || data[0] != SUMI_OTA_TAG || data[1] != OTA_DATA)
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    if (!open || !sumi_ota_busy()) {
+        abort_upload();
+        return window_error = OTA_FAILED;
+    }
+    uint32_t offset = packet_argument(data);
+    // A read may run before the last write reaches the peer. Accept a replay
+    // only when the whole packet is already behind the receive cursor.
+    if (offset < received && size - HEADER <= received - offset) return 0;
+    if (offset != received) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+    return window_error = sumi_ota_command(data, size, false);
+}
+
+size_t sumi_ota_window_progress(uint8_t out[SUMI_OTA_PROGRESS_SIZE])
+{
+    if (!window_mode) return 0;
+    if (open && !sumi_ota_busy()) {
+        abort_upload();
+        window_error = OTA_FAILED;
+    }
+    out[0] = SUMI_OTA_TAG;
+    out[1] = OTA_PROGRESS;
+    for (unsigned i = 0; i < 4; ++i) out[2 + i] = received >> (8 * i);
+    out[6] = window_error;
+    return SUMI_OTA_PROGRESS_SIZE;
 }
 
 size_t sumi_ota_status(uint8_t out[16])
@@ -257,4 +303,11 @@ int sumi_ota_command(const uint8_t *data, size_t size, bool idle)
     return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
 }
 size_t sumi_ota_status(uint8_t out[16]) { (void)out; return 0; }
+int sumi_ota_window_data(const uint8_t *data, size_t size)
+{
+    (void)data;
+    (void)size;
+    return BLE_ATT_ERR_REQ_NOT_SUPPORTED;
+}
+size_t sumi_ota_window_progress(uint8_t out[SUMI_OTA_PROGRESS_SIZE]) { (void)out; return 0; }
 #endif

@@ -514,13 +514,29 @@ int sumi_phone_access(uint16_t conn, uint16_t attr, struct ble_gatt_access_ctxt 
     if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
         uint8_t status[SUMI_PHONE_HEADER + 4];
         portENTER_CRITICAL(&lock);
+        bool read_ota = conn_handle == conn && ready_locked() && !reply.turn;
         uint32_t capacity = SUMI_PHONE_PLAYBACK_CAPACITY - (reply.written - reply.consumed);
         sumi_phone_encode_header(status, SUMI_PHONE_REPLY_STATUS, reply.turn,
                                  reply.turn ? reply.written : SUMI_PHONE_FEATURE_STREAM | SUMI_PHONE_FEATURE_PUSH |
                                  SUMI_PHONE_FEATURE_NOTE_STREAM | SUMI_PHONE_FEATURE_REPLY_PREFILL);
         portEXIT_CRITICAL(&lock);
+        uint8_t progress[SUMI_OTA_PROGRESS_SIZE];
+        size_t length = read_ota ? sumi_ota_window_progress(progress) : 0;
+        if (length) return os_mbuf_append(ctxt->om, progress, length) ? BLE_ATT_ERR_INSUFFICIENT_RES : 0;
         for (unsigned i = 0; i < 4; ++i) status[SUMI_PHONE_HEADER + i] = (uint8_t)(capacity >> (8 * i));
         return os_mbuf_append(ctxt->om, status, sizeof(status)) ? BLE_ATT_ERR_INSUFFICIENT_RES : 0;
+    }
+    uint8_t tag;
+    if (ctxt->op == BLE_GATT_ACCESS_OP_WRITE_CHR &&
+        !os_mbuf_copydata(ctxt->om, 0, 1, &tag) && tag == SUMI_OTA_TAG) {
+        portENTER_CRITICAL(&lock);
+        bool owner = conn_handle == conn && ready_locked() && !reply.turn;
+        portEXIT_CRITICAL(&lock);
+        if (!owner) return BLE_ATT_ERR_INSUFFICIENT_AUTHOR;
+        uint8_t data[SUMI_OTA_PACKET_MAX];
+        uint16_t size = 0;
+        if (ble_hs_mbuf_to_flat(ctxt->om, data, sizeof(data), &size)) return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN;
+        return sumi_ota_window_data(data, size);
     }
     uint8_t bytes[SUMI_PHONE_PACKET_MAX];
     uint16_t length = 0;
