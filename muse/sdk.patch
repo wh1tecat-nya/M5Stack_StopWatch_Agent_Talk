@@ -65,28 +65,19 @@
      muse_board->display_unlock();
 --- a/esp32/components/muse/muse_input.c
 +++ b/esp32/components/muse/muse_input.c
-@@ -15,6 +15,12 @@
+@@ -15,6 +15,11 @@
   */
  
  #include "muse_input.h"
 +#include "sumi_ui.h"
 +#include "sumi_asr.h"
-+#include "sumi_panel_test.h"
 +#include "sumi_charge.h"
 +#include "sumi_tts.h"
 +#include "sumi_wifi.h"
  
  #include <stdint.h>
  #include <stdatomic.h>
-@@ -27,6 +33,7 @@
- #include "esp_log.h"
- #include "freertos/task.h"
- #include "sdkconfig.h"
-+#include "esp_timer.h"
- #if CONFIG_PM_ENABLE
- #include "esp_pm.h"
- #include "esp_sleep.h"
-@@ -97,6 +104,8 @@
+@@ -97,6 +102,8 @@
  static atomic_uint s_call_pending;
  static atomic_uint s_mark_seq;
  static atomic_uint s_call_epoch;
@@ -95,7 +86,7 @@
  uint32_t muse_input_call_epoch(void) { return atomic_load(&s_call_epoch); }
  void muse_input_clear_call_pending(uint32_t mark)
  {
-@@ -171,6 +180,7 @@
+@@ -171,6 +178,7 @@
      if (asleep != muse_state_asleep()) {
          ESP_LOGI(TAG, "%s (%s)", asleep ? "sleeping" : "waking", why);
          muse_state_set_asleep(asleep);
@@ -103,7 +94,7 @@
  #if CONFIG_MUSE_BOARD_SENSECAP_WATCHER
          if (asleep) {
              muse_review_close();   /* auto-sleep too: waking shows the live caption */
-@@ -314,12 +324,9 @@
+@@ -314,12 +322,9 @@
              swallow = true;
          } else if (muse_state_asleep()) {
              set_asleep(false, muse_board->talk_button);
@@ -119,7 +110,7 @@
          } else if (muse_menu_is_open()) {
              muse_state_poke();
              if (!muse_board->keyboard) muse_menu_key(MUSE_MENU_SELECT);
-@@ -439,6 +446,7 @@
+@@ -439,6 +444,7 @@
          set_asleep(false, "pairing");
          return;
      }
@@ -127,56 +118,7 @@
      if (muse_voice_in_call()) return;
      int after = muse_settings_sleep_s();
      float mode_t;
-@@ -528,12 +536,34 @@
-  * at the crystal clock a long line of serial output can stall the USB console
-  * until the host reopens the port.
-  */
-+static atomic_int s_panel_test;
-+static int64_t s_panel_deadline;
-+void sumi_panel_test_request(void) { atomic_store(&s_panel_test, 1); }
-+int sumi_panel_test_state(void) { return atomic_load(&s_panel_test); }
-+bool sumi_panel_test_active(void) { int s = atomic_load(&s_panel_test); return s >= 1 && s <= 3; }
-+static bool panel_test_pause(void)
-+{
-+    int state = atomic_load(&s_panel_test);
-+    if (state == 1) {
-+        s_panel_deadline = esp_timer_get_time() + 20000000;
-+        atomic_store(&s_panel_test, 2);
-+        state = 2;
-+        ESP_LOGI(TAG, "panel test: stopping display for 20 seconds");
-+    }
-+    if (state == 2 && esp_timer_get_time() >= s_panel_deadline) {
-+        atomic_store(&s_panel_test, 3);
-+        return false;
-+    }
-+    return state == 2;
-+}
- static bool update_power(void)
- {
-     static bool paused;
--    bool pause = muse_board->display_pause && muse_state_on_battery() && muse_state_asleep()
--                 && muse_ui_dark() && muse_voice_resting();
--    bool want_low = pause && !muse_console_host();
-+    bool test = panel_test_pause();
-+    bool pause = muse_board->display_pause && (test || (muse_state_on_battery() && muse_state_asleep()
-+                 && muse_ui_dark() && muse_voice_resting()));
-+    /* Diagnostic keeps CPU and audio awake; only the display supply is changed. */
-+    bool want_low = pause && !test && !muse_console_host();
-     if (pause == paused && want_low == s_cpu_low) {
-         return paused;
-     }
-@@ -547,6 +577,10 @@
-         muse_board->display_pause(false);
-     }
-     paused = pause;
-+    if (!paused && atomic_load(&s_panel_test) == 3) {
-+        atomic_store(&s_panel_test, 4);
-+        ESP_LOGI(TAG, "panel test: display resumed");
-+    }
-     s_cpu_low = want_low;
-     ESP_LOGI(TAG, "%s", s_cpu_low ? "low power: display paused"
-                         : paused  ? "display paused (USB host: CPU at full speed)"
-@@ -572,7 +606,7 @@
+@@ -572,7 +578,7 @@
          s_nap_now = false;
          muse_state_set_as_if_battery(false);
      }
@@ -185,7 +127,7 @@
                 && (s_nap_now || (s_cpu_low && now - low_since >= pdMS_TO_TICKS(WIFI_NAP_MS)));
      if (nap != napping) {
          napping = nap;
-@@ -614,38 +648,12 @@
+@@ -614,38 +620,12 @@
          power_off();
      }
      if (release) power_release();
@@ -228,7 +170,7 @@
  }
  
  static void input_task(void *arg)
-@@ -657,6 +665,7 @@
+@@ -657,6 +637,7 @@
      TickType_t powered = xTaskGetTickCount() - pdMS_TO_TICKS(POWER_MS);
  
      for (;;) {
@@ -236,7 +178,7 @@
          unsigned ev = muse_board->poll_buttons() | atomic_exchange(&s_touch_talk_events, 0);
  #if CONFIG_MUSE_VIDEO
          /* Any press leaves the video view (its release then does nothing). */
-@@ -845,6 +854,32 @@
+@@ -845,6 +826,32 @@
   */
  static bool console_command(char *line, bool whole)
  {
@@ -729,17 +671,16 @@
       * paused, unless wait_buttons is set); returns MUSE_BTN_* edges. */
 --- a/esp32/components/muse/boards/board_m5stack_stopwatch.c
 +++ b/esp32/components/muse/boards/board_m5stack_stopwatch.c
-@@ -46,6 +46,9 @@
+@@ -46,6 +46,8 @@
   * M5PM1 user manual (docs/ in M5PM1 be9a545: IRQ Status 1-3, BTN_CFG_1) and
   * M5Unified's ES8311 notes for the StopWatch (M5Unified.inl).
   */
 +#include "sumi_charge.h"
 +#include "sumi_battery.h"
-+#include "sumi_noise_test.h"
  #include <stdlib.h>
  #include <string.h>
  
-@@ -122,6 +125,7 @@
+@@ -122,6 +124,7 @@
  
  #define PMIC_ADDR 0x6E
  #define PMIC_PWR_CFG 0x06
@@ -747,7 +688,7 @@
  #define PMIC_PWR_LED BIT(4)
  #define PMIC_PWR_5V_OUT 0x08       /* 5 V boost to the Grove port */
  #define PMIC_I2C_CFG 0x09          /* 0: no I2C idle sleep */
-@@ -129,6 +133,7 @@
+@@ -129,6 +132,7 @@
  #define PMIC_GPIO_MODE 0x10        /* 1 = output */
  #define PMIC_GPIO_OUT 0x11
  #define PMIC_GPIO_IN 0x12
@@ -755,7 +696,7 @@
  #define PMIC_GPIO_OD 0x13          /* 1 = open drain */
  #define PMIC_GPIO_FUNC0 0x16       /* two bits per GPIO 0-3; 0 = GPIO */
  #define PMIC_CHG_STAT BIT(2)       /* low while charging */
-@@ -208,7 +213,7 @@
+@@ -208,7 +212,7 @@
  
  static i2c_master_bus_handle_t s_i2c;
  static i2c_master_dev_handle_t s_pmic, s_ioe, s_tp;
@@ -764,7 +705,7 @@
  static esp_lcd_panel_io_handle_t s_io;
  static esp_lcd_panel_handle_t s_panel;
  static const audio_codec_if_t *s_codec;
-@@ -259,9 +264,64 @@
+@@ -259,9 +263,64 @@
  static esp_err_t pmic_update(uint8_t reg, uint8_t mask, uint8_t bits)
  {
      uint8_t v;
@@ -832,7 +773,7 @@
  }
  
  /* M5Unified's M5PM1_Class::setLedEnLevel controls PWR_CFG bit4.
-@@ -277,11 +337,6 @@
+@@ -277,11 +336,6 @@
      return pmic_update(PMIC_PWR_CFG, PMIC_PWR_LED, *usb ? PMIC_PWR_LED : 0);
  }
  
@@ -844,21 +785,10 @@
  
  /* Writing 0 clears every status bit and lets the IRQ line go high again. */
  static esp_err_t pmic_irq_clear(void)
-@@ -380,6 +435,22 @@
+@@ -380,6 +434,11 @@
      return ioe_update(IOE_OUT, pins, high ? pins : 0);
  }
  
-+/* Read the output latch, not the actual analog supply voltage. */
-+int sumi_audio_rail_enabled(void)
-+{
-+    uint8_t b[2];
-+    xSemaphoreTake(s_ioe_lock, portMAX_DELAY);
-+    esp_err_t err = reg_read(s_ioe, IOE_OUT, b, sizeof(b));
-+    xSemaphoreGive(s_ioe_lock);
-+    if (err != ESP_OK) return -1;
-+    return !!((b[0] | b[1] << 8) & IOE_AUDIO);
-+}
-+
 +static esp_err_t speaker_power(bool on)
 +{
 +    return ioe_set(IOE_SPK, on);
@@ -867,7 +797,7 @@
  /* The codec driver switches the amp through this as the speaker opens and closes. */
  static int ioe_gpio_setup(int16_t gpio, audio_gpio_dir_t dir, audio_gpio_mode_t mode)
  {
-@@ -455,6 +526,8 @@
+@@ -455,6 +514,8 @@
  {
      s_ioe_lock = xSemaphoreCreateMutex();
      ESP_RETURN_ON_FALSE(s_ioe_lock, ESP_ERR_NO_MEM, TAG, "ioe lock");
@@ -876,7 +806,7 @@
      const i2c_master_bus_config_t i2c_cfg = {
          .i2c_port = I2C_NUM_0,
          .sda_io_num = I2C_SDA,
-@@ -474,11 +547,14 @@
+@@ -474,11 +535,14 @@
       * it, and the 5 V boost off: nothing Muse uses hangs off the Grove port. */
      ESP_RETURN_ON_ERROR(reg_write(s_pmic, PMIC_I2C_CFG, (uint8_t[]){ 0 }, 1), TAG, "pmic i2c sleep off");
      ESP_RETURN_ON_ERROR(reg_write(s_pmic, PMIC_WDT, (uint8_t[]){ 0 }, 1), TAG, "pmic watchdog off");
@@ -891,7 +821,7 @@
      bool usb;
      ESP_RETURN_ON_ERROR(read_usb_power(&usb), TAG, "power LED");
      /* Factory hal_pmic.cpp disables single-click reset. Keep double-click
-@@ -1064,16 +1140,14 @@
+@@ -1064,16 +1128,14 @@
      uint8_t in;
      ESP_RETURN_ON_ERROR(reg_read(s_pmic, PMIC_GPIO_IN, &in, 1), TAG, "pmic read");
      ESP_RETURN_ON_ERROR(read_usb_power(&out->usb), TAG, "power LED");
@@ -914,7 +844,7 @@
      return ESP_OK;
  }
  
-@@ -1081,6 +1155,7 @@
+@@ -1081,6 +1143,7 @@
   * button turns it back on. Do not substitute an ESP GPIO or deep-sleep wake. */
  static esp_err_t power_off(void)
  {
@@ -922,7 +852,7 @@
      uint8_t cmd = PMIC_SHUTDOWN;
      /* Don't turn off peripheral rails first: on a failed command the shared
       * input/UI must be able to display COULDN'T POWER OFF and remain usable. */
-@@ -1124,6 +1199,7 @@
+@@ -1124,6 +1187,7 @@
      .audio_init = audio_init,
      .mic_slot = 0,              /* one mic, on the left slot */
      .audio_power = audio_power,
@@ -1178,7 +1108,7 @@
  # needs is listed unconditionally. Managed components (LVGL, codecs, BSPs) come
  # from idf_component.yml, where rules keep them out of Link-only builds.
 -set(srcs)
-+set(srcs "sumi_clock.c" "sumi_clock_64.c" "sumi_ui.c" "sumi_assets.c" "sumi_tts.cpp" "sumi_font_24.c" "sumi_chat.c" "sumi_voice_options.c" "sumi_noise_test.c" "sumi_asr.c" "sumi_phone.c" "sumi_phone_audio.c" "sumi_ota.c")
++set(srcs "sumi_clock.c" "sumi_clock_64.c" "sumi_ui.c" "sumi_assets.c" "sumi_tts.cpp" "sumi_font_24.c" "sumi_chat.c" "sumi_voice_options.c" "sumi_asr.c" "sumi_phone.c" "sumi_phone_audio.c" "sumi_ota.c")
  set(embed)
  if(CONFIG_MUSE_ENABLED)
      list(APPEND srcs
@@ -1666,12 +1596,11 @@
                  ESP_LOGI(TAG, "wifi %s; disconnecting", have ? "off" : "forgotten");
 --- a/esp32/components/muse/muse_voice.c
 +++ b/esp32/components/muse/muse_voice.c
-@@ -30,6 +30,12 @@
+@@ -30,6 +30,11 @@
  #include "sdkconfig.h"
  
  #include "muse_adpcm.h"
 +#include "sumi_ui.h"
-+#include "sumi_noise_test.h"
 +#include "sumi_asr.h"
 +#include "sumi_phone.h"
 +#include "sumi_chat.h"
@@ -1679,7 +1608,7 @@
  #include "muse_audio.h"
  #include "muse_board.h"
  #include "muse_chat.h"
-@@ -46,7 +52,7 @@
+@@ -46,7 +51,7 @@
  static const char *TAG = "muse_voice";
  
  #define MAX_SECS 15
@@ -1688,7 +1617,7 @@
  #define MAX_FRAMES (MUSE_AUDIO_RATE * MAX_SECS)
  #define MIN_HELD_FRAMES (MUSE_AUDIO_RATE * 3 / 10)   /* shorter presses are taps, not speech */
  #if CONFIG_MUSE_BOARD_M5STACK_CARDPUTER_ADV || CONFIG_MUSE_BOARD_AI_PASSPORT
-@@ -79,10 +85,14 @@
+@@ -79,10 +84,14 @@
  static volatile float s_monitor_db = -100.0f;
  static volatile bool s_chirp;
  static volatile bool s_loopback;
@@ -1703,7 +1632,7 @@
  
  muse_voice_view_t muse_voice_call_view(void) { return atomic_load(&s_call_view); }
  bool muse_voice_in_call(void) { return muse_voice_call_view() != MUSE_VOICE_VIEW_NONE; }
-@@ -90,7 +100,7 @@
+@@ -90,7 +99,7 @@
  bool muse_voice_ptt_enabled(void)
  {
  #if CONFIG_MUSE_BOARD_M5STACK_STOPWATCH && CONFIG_MUSE_REALTIME_VOICE
@@ -1712,16 +1641,7 @@
  #else
      return false;
  #endif
-@@ -102,7 +112,7 @@
-      * core's capture state and calls end from call_input(), never here. */
-     atomic_store(&s_shutdown, true);
-     int64_t until = esp_timer_get_time() + (int64_t)wait_ms * 1000;
--    while (muse_voice_in_call() && esp_timer_get_time() < until) {
-+    while ((muse_voice_in_call() || sumi_noise_test_active()) && esp_timer_get_time() < until) {
-         vTaskDelay(pdMS_TO_TICKS(20));
-     }
- }
-@@ -197,6 +207,7 @@
+@@ -197,6 +206,7 @@
  /* Call after Muse plays anything: its own sound must not become pre-roll. */
  static void pre_reset(void)
  {
@@ -1729,7 +1649,7 @@
      s_pre_fill = 0;
      s_settle = SETTLE_CHUNKS;
  }
-@@ -326,8 +337,9 @@
+@@ -326,8 +336,9 @@
      muse_state_set_mode(MUSE_MODE_LISTENING);
      muse_state_set_progress(0);
      s_rec_n = s_sent = 0;
@@ -1740,7 +1660,7 @@
          go_live();
      }
      muse_state_set_caption(s_live ? "LISTENING..." : "RECORDING...");
-@@ -351,9 +363,18 @@
+@@ -351,9 +362,18 @@
      }
      size_t pre = n;
      bool released = false;
@@ -1760,7 +1680,7 @@
              break;
          }
          muse_state_set_level(muse_audio_level(s_chunk, MUSE_AUDIO_CHUNK));
-@@ -379,7 +400,7 @@
+@@ -379,7 +399,7 @@
          }
          n += MUSE_AUDIO_CHUNK;
          bool tick = n % (MUSE_AUDIO_CHUNK * 5) == 0;
@@ -1769,7 +1689,7 @@
              ESP_LOGI(TAG, "Muse in reach: streaming the note so far");
              go_live();
          }
-@@ -393,11 +414,16 @@
+@@ -393,11 +413,16 @@
           */
          if (!released && got_event(MUSE_PTT_UP)) {
              released = true;
@@ -1788,7 +1708,7 @@
  
      char tail[160];
      int tl = 0;
-@@ -410,6 +436,11 @@
+@@ -410,6 +435,11 @@
      ESP_LOGI(TAG, "recorded %.2fs%s: rms %.1f dBFS, peak %.1f dBFS, floor %.1f dBFS, %d clipped, gain %d dB",
               (double)n / MUSE_AUDIO_RATE, released ? "" : " (max)", rms_db < -100.0f ? -100.0f : rms_db,
               20.0 * log10((st.peak + 1) / 32768.0), st.floor_db, st.clipped, muse_settings_mic_gain());
@@ -1800,7 +1720,7 @@
      return ok;
  }
  
-@@ -419,23 +450,32 @@
+@@ -419,23 +449,32 @@
   * Plays Hatch's reply as it arrives, with its text as the caption. Returns
   * true if interrupted by a new press. *delivered: the VM has the note.
   */
@@ -1836,7 +1756,7 @@
              switch (ev) {
              case MUSE_HATCH_EV_HEARD:
                  if (!speaking && !replied) {
-@@ -475,8 +515,9 @@
+@@ -475,8 +514,9 @@
              muse_state_set_level(0);
              return true;
          }
@@ -1847,7 +1767,7 @@
              if (!speaking) {
                  speaking = true;
                  muse_state_set_mode(MUSE_MODE_SPEAKING);
-@@ -488,7 +529,12 @@
+@@ -488,7 +528,12 @@
          } else if (done) {
              break;
          } else if (speaking) {
@@ -1861,7 +1781,7 @@
              muse_state_set_level(0);
              muse_audio_write(silence, MUSE_AUDIO_CHUNK);
          }
-@@ -500,6 +546,8 @@
+@@ -500,6 +545,8 @@
      muse_state_set_level(0);
      ESP_LOGI(TAG, "muse reply: %.2fs of audio, %.2fs total", (double)played / MUSE_AUDIO_RATE,
               (esp_timer_get_time() - t0) / 1e6);
@@ -1870,7 +1790,7 @@
      if (incomplete[0]) {
          ESP_LOGW(TAG, "muse: %s", incomplete);
          go_idle(incomplete);
-@@ -782,7 +830,7 @@
+@@ -782,7 +829,7 @@
      if (fed == FED && quiet) {
          delivered = wait_delivered();
      } else if (fed == FED) {
@@ -1879,7 +1799,7 @@
      }
      if (fed != FED || quiet) {
          muse_hatch_turn_cancel();   /* asleep, the reply is left for the app */
-@@ -847,9 +895,46 @@
+@@ -847,9 +894,46 @@
   * or if it can't go now it's saved to send later. Returns true if a press
   * interrupted the reply.
   */
@@ -1926,7 +1846,7 @@
  #if HOLD_NOTES
      if (s_rec) {
          bool fed = false, interrupted = false;
-@@ -869,7 +954,7 @@
+@@ -869,7 +953,7 @@
              }
          }
          if (fed) {
@@ -1935,7 +1855,7 @@
          }
          if (delivered || interrupted) {
              drop_rec();
-@@ -881,7 +966,7 @@
+@@ -881,7 +965,7 @@
  #endif
      muse_hatch_turn_end();   /* before the chirp, which takes ~90 ms */
      muse_audio_chirp(0);
@@ -1944,7 +1864,7 @@
  }
  
  /*
-@@ -890,6 +975,16 @@
+@@ -890,6 +974,16 @@
   */
  static bool can_record(void)
  {
@@ -1961,7 +1881,7 @@
      if (!muse_wifi_connected()) {
          muse_wifi_apply();   /* retry now, not after the backoff */
      }
-@@ -913,6 +1008,11 @@
+@@ -913,6 +1007,11 @@
          ESP_LOGE(TAG, "no memory to keep a note");
      }
  #endif
@@ -1973,7 +1893,7 @@
      if (!ready && !s_rec) {
          go_idle(not_ready_reason());
          return false;
-@@ -934,6 +1034,8 @@
+@@ -934,6 +1033,8 @@
      uint32_t input_epoch;
      int64_t give_up, release_until;
      size_t release_frames;
@@ -1982,7 +1902,7 @@
      muse_vc_gate_t gate;
  } call_ui_t;
  
-@@ -964,6 +1066,8 @@
+@@ -964,6 +1065,8 @@
              finish_release(c);   /* old press closes before the new one opens */
              ++c->press;
              c->held = true;
@@ -1991,7 +1911,7 @@
              muse_voice_call_set_talking(true);
              muse_vc_gate_init(&c->gate, false, 0);
              c->awaiting = false;
-@@ -1010,7 +1114,8 @@
+@@ -1010,7 +1113,8 @@
      static int16_t out[MUSE_AUDIO_CHUNK];
      static const int16_t silence[MUSE_AUDIO_CHUNK];
      char text[96] = "";
@@ -2001,7 +1921,7 @@
      muse_vc_gate_init(&c.gate, false, ptt ? 0 : CALL_TAIL_US);
      bool ended = false;
      atomic_store(&s_ptt_call, ptt);
-@@ -1082,6 +1187,13 @@
+@@ -1082,6 +1186,13 @@
          bool mic = captured && !c.hung_up && !c.server_hold && c.input_epoch == muse_input_call_epoch();
          if (ptt) mic = mic && capture_window && (c.held || c.release_until) && press == c.press && status.capture;
          else mic = mic && c.live && muse_vc_gate_mic_open(&c.gate, now);
@@ -2015,7 +1935,7 @@
          if (mic) mic = muse_voice_call_audio(s_chunk, MUSE_AUDIO_CHUNK);
          if (ptt && mic) {
              c.awaiting = true;
-@@ -1110,7 +1222,7 @@
+@@ -1110,7 +1221,7 @@
          muse_voice_view_t view = c.hung_up ? MUSE_VOICE_VIEW_ENDING :
              !c.live ? MUSE_VOICE_VIEW_CONNECTING :
              c.server_hold ? MUSE_VOICE_VIEW_THINKING :
@@ -2024,7 +1944,7 @@
              speaking ? MUSE_VOICE_VIEW_SPEAKING :
              !ptt ? (muse_voice_call_working() ? MUSE_VOICE_VIEW_WORKING : MUSE_VOICE_VIEW_LISTENING) :
              c.release_until || c.awaiting || status.sending ? MUSE_VOICE_VIEW_THINKING :
-@@ -1160,11 +1272,75 @@
+@@ -1160,11 +1271,65 @@
  }
  #endif
  
@@ -2068,16 +1988,6 @@
      bool pending_down = false;
      muse_audio_selftest();
      for (;;) {
-+        if (sumi_noise_test_active()) {
-+            set_resting(false);
-+            bool waiting = sumi_noise_test_step(atomic_load(&s_shutdown));
-+            muse_input_event_t ignored;
-+            while (xQueueReceive(s_queue, &ignored, 0) == pdTRUE)
-+                muse_input_clear_call_pending(ignored.mark);
-+            pending_down = false;
-+            pre_reset();
-+            if (waiting) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
-+        }
 +        muse_input_event_t head;
 +        if (!pending_down && !atomic_load(&s_shutdown) && !sumi_ui_settings_open() &&
 +            (xQueuePeek(s_queue, &head, 0) != pdTRUE || head.type != MUSE_PTT_DOWN)) {
@@ -2100,7 +2010,7 @@
          bool wake = false;
          if (!pending_down) {
              muse_input_event_t ev;
-@@ -1174,7 +1350,7 @@
+@@ -1174,7 +1339,7 @@
  #if HOLD_NOTES
              /* A press goes first: send_held() leaves it queued and returns
               * without backing off, so retrying before it's read would spin. */
@@ -2109,7 +2019,7 @@
                  set_resting(false);   /* full power while it goes, even asleep */
                  muse_wifi_power(MUSE_WIFI_FULL);
                  pending_down = send_held(asleep);
-@@ -1189,7 +1365,8 @@
+@@ -1189,7 +1354,8 @@
              set_resting(rest);
              /* On battery Wi-Fi rests with the codecs, and between turns dozes
               * between beacons as xiaozhi's idle does; a press wakes it fully. */
@@ -2119,7 +2029,7 @@
              if (rest) {
                  /* Wait for waking, USB power or a bench request without
                   * polling (the timeout is only a backstop, or a look for
-@@ -1217,6 +1394,10 @@
+@@ -1217,6 +1383,10 @@
                  muse_audio_loopback_test(muse_settings_volume());
                  pre_reset();
              }
@@ -2130,7 +2040,7 @@
              /* The 20 ms read paces this loop. */
              idle_capture();
              if (xQueueReceive(s_queue, &ev, 0) != pdTRUE) {
-@@ -1242,7 +1423,7 @@
+@@ -1242,7 +1412,7 @@
              muse_input_clear_call_pending(s_press_mark);
              continue;
          }
@@ -2139,7 +2049,7 @@
  #if CONFIG_MUSE_REALTIME_VOICE
          if (ptt) {
              pending_down = false;
-@@ -1265,6 +1446,15 @@
+@@ -1265,6 +1435,15 @@
          char why[96];
          bool ok = record(pending_down, &held, why, sizeof(why));
          pending_down = false;
@@ -2155,7 +2065,7 @@
          if (short_press(held) && !wake) {
              muse_hatch_turn_cancel();
              drop_rec();
-@@ -1285,7 +1475,7 @@
+@@ -1285,7 +1464,7 @@
              go_idle(why);   /* Hatch failed it while recording */
              continue;
          }

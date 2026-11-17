@@ -10,6 +10,8 @@ typedef struct { int battery_pct, battery_mv; bool charging, usb; } muse_power_t
 typedef struct { unsigned passkey; } muse_ble_status_t;
 enum { MUSE_LINK_CONFIRM = 3 };
 typedef int nvs_handle_t;
+typedef struct { char version[32]; } esp_app_desc_t;
+const esp_app_desc_t *esp_app_get_description(void);
 typedef int esp_err_t;
 #define ESP_OK 0
 #define NVS_READWRITE 1

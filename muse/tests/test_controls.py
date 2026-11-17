@@ -36,10 +36,6 @@ bool sumi_wifi_active(void) { return false; }
 bool muse_link_hatch_linked(void) { return true; }
 int main(void) {
     s_queue=&queue; muse_board=&stopwatch_board;
-    sumi_panel_test_request();assert(panel_test_pause() && sumi_panel_test_active());
-    clock_us+=19999999;assert(panel_test_pause());
-    clock_us++;assert(!panel_test_pause() && sumi_panel_test_state()==3);
-    atomic_store(&s_panel_test,0);
     asleep=true;
     talk_button(MUSE_BTN_TALK_PRESS);
     assert(!asleep && wakes==1 && queue.n==0);

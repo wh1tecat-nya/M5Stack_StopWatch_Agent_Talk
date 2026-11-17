@@ -48,7 +48,7 @@ def package():
                                    'sha256': hashlib.sha256(data).hexdigest()})
     (dest / 'flash-plan.json').write_text(json.dumps(manifest, indent=2) + '\n')
     (dest / 'SHA256SUMS').write_text(''.join(f"{x['sha256']}  {x['file']}\n" for x in manifest['images']))
-    for name in ['README.md', 'THIRD_PARTY_NOTICES.md', 'VALIDATION.md']:
+    for name in ['README.md', 'THIRD_PARTY_NOTICES.md', 'FIRMWARE_TERMS.md', 'VALIDATION.md']:
         if (ROOT / name).exists(): shutil.copy2(ROOT / name, dest / name)
     licenses = dest / 'licenses'; licenses.mkdir(exist_ok=True)
     shutil.copy2(ROOT / '.cache/NotoSansCJK-OFL.txt', licenses / 'NotoSansCJK-OFL.txt')

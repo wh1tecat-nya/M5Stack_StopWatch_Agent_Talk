@@ -2,9 +2,7 @@
 #include "sumi_tts.h"
 #include "sumi_chat.h"
 #include "sumi_charge.h"
-#include "sumi_noise_test.h"
 #include "sumi_asr.h"
-#include "sumi_panel_test.h"
 #include "sumi_voice_options.h"
 #include "sumi_phone.h"
 #include "sumi_phone_audio.h"
@@ -20,6 +18,7 @@
 #include "muse_ble.h"
 #include "lvgl.h"
 #include "esp_timer.h"
+#include "esp_app_desc.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -49,16 +48,14 @@ static int page = -1;
 static uint32_t shown_chat_catalog;
 static int chat_page;
 #define CHAT_PAGE_SIZE 6
-static uint32_t charge_deadline;
-static bool charge_restore_pending;
-enum { WIFI_NETWORKS = 7, WIFI_SETUP = 9, WIFI_NETWORK = 22, WIFI_DELETE = 23, WIFI_RESULT = 24 };
+enum { WIFI_NETWORKS = 7, WIFI_SETUP = 9, WIFI_NETWORK = 22, WIFI_DELETE = 23, WIFI_RESULT = 24, SYSTEM_INFO = 25 };
 static muse_wifi_saved_t wifi_networks[MUSE_WIFI_SAVED_MAX];
 static char wifi_selection[MUSE_SSID_MAX + 1];
 static const char *titles[] = {"音量", "アバターの明るさ", "バッジの明るさ",
     "アバターの表示時間", "バッジ明の表示時間", "バッジ暗の表示時間",
     "返答の声", "Wi-Fiを変更", "通話を終了", "Wi-Fi設定",
-    "読み上げ速度", "マイク感度", "会話先", "録音を聞き返す", "充電速度", "充電音を確認", "音声回路を確認", "音声認識", "表示回路を確認", "送信設定", "接続モード", "スマホから設定",
-    "保存済みWi-Fi", "Wi-Fiの削除", "Wi-Fi設定"};
+    "読み上げ速度", "マイク感度", "会話先", "録音を聞き返す", "充電速度", NULL, NULL, "音声認識", NULL, "送信設定", "接続モード", "スマホから設定",
+    "保存済みWi-Fi", "Wi-Fiの削除", "Wi-Fi設定", "システム情報"};
 static uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 static bool save(const char *key, int v) {
     if (!have_settings) return false;
@@ -103,26 +100,9 @@ static lv_obj_t *button(lv_obj_t *parent, const char *str, int y, int width,
     return o;
 }
 static void show_page(int which);
-static const char *noise_message(sumi_noise_state_t s) {
-    const char *messages[] = {"USBをつないだまま\n音の変化を確認", "停止の準備中…",
-        "音声回路 停止中（20秒）\n終了後、自動で再開", "音声回路を再開中…",
-        "音声回路を再開しました", "停止・復帰を確認できません\nログを確認してください",
-        "音声の復帰を再試行中\n戻らない場合は再起動"};
-    return messages[s];
-}
-static void restore_charging(void) {
-    if (!charge_restore_pending || (int32_t)(now_ms() - charge_deadline) < 0) return;
-    if (sumi_charge_enable(true)) {
-        charge_restore_pending = false;
-        if (page == 15 && value) lv_label_set_text(value, "充電を再開しました");
-    } else {
-        charge_deadline = now_ms() + 1000;
-        if (page == 15 && value) lv_label_set_text(value, "充電再開を確認できません\n自動で再試行します");
-    }
-}
 static bool voice_busy(void) {
     muse_mode_t m = muse_state_mode(NULL);
-    return sumi_panel_test_active() || sumi_noise_test_active() || muse_voice_in_call() || m == MUSE_MODE_LISTENING || m == MUSE_MODE_THINKING || m == MUSE_MODE_SPEAKING;
+    return muse_voice_in_call() || m == MUSE_MODE_LISTENING || m == MUSE_MODE_THINKING || m == MUSE_MODE_SPEAKING;
 }
 
 int sumi_ui_setting(unsigned key) {
@@ -147,7 +127,7 @@ int sumi_ui_setting(unsigned key) {
 
 int sumi_ui_apply_setting(unsigned key, int32_t value) {
     if (key == SUMI_SETTING_WIFI_SETUP && value == 0) { sumi_wifi_cancel(); return 0; }
-    if (voice_busy() || muse_voice_notes_waiting() || sumi_wifi_active() || charge_restore_pending) return 2;
+    if (voice_busy() || muse_voice_notes_waiting() || sumi_wifi_active()) return 2;
     switch (key) {
     case SUMI_SETTING_MODE:
         if (value != 0 && value != 1) return 3;
@@ -244,29 +224,10 @@ static void choose(lv_event_t *e) {
             lv_label_set_text(value, "充電設定を確認できません\nもう一度選んでください"); return;
         }
         save("charge_ma", v); show_page(14);
-    } else if (page == 15) {
-        if (!v) { charge_deadline = now_ms(); restore_charging(); return; }
-        if (charge_restore_pending) return;
-        if (!muse_state_power().usb) { lv_label_set_text(value, "USBを接続してから\n開始してください"); return; }
-        charge_restore_pending = true;
-        charge_deadline = now_ms() + 20000;
-        if (sumi_charge_enable(false)) lv_label_set_text(value, "充電停止中（20秒）\n終了後、自動で再開");
-        else { charge_deadline = now_ms(); restore_charging(); }
-    } else if (page == 16) {
-        if (!v) { sumi_noise_test_cancel(); return; }
-        if (!muse_state_power().usb) { lv_label_set_text(value, "USBを接続してから\n開始してください"); return; }
-        if (voice_busy() || muse_voice_notes_waiting()) { lv_label_set_text(value, "会話が終わってから\n開始してください"); return; }
-        sumi_noise_test_request();
     } else if (page == 17) {
         if (voice_busy() || muse_voice_notes_waiting()) { lv_label_set_text(value, "会話が終わってから\n変更してください"); return; }
         if (!sumi_asr_select(v != 0)) { lv_label_set_text(value, "APIキー未設定、または\n設定を保存できません"); return; }
         show_page(17);
-    } else if (page == 18) {
-        if (!muse_state_power().usb) { lv_label_set_text(value, "USBを接続してから\n開始してください"); return; }
-        if (voice_busy() || muse_voice_notes_waiting() || charge_restore_pending) {
-            lv_label_set_text(value, "会話・充電の比較を\n終えてから開始してね"); return;
-        }
-        sumi_panel_test_request();
     } else if (page == 19) {
         if (voice_busy() || muse_voice_notes_waiting()) {
             lv_label_set_text(value, "会話・未送信の音声が\nなくなってから変更できます"); return;
@@ -387,7 +348,7 @@ static void show_page(int which) {
         lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_scroll_dir(list, LV_DIR_VER);
         lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_ACTIVE);
-        const int order[] = {20, WIFI_NETWORKS, 21, 12, 19, 17, 10, 0, 11, 13, 18, 16, 14, 15, 1, 2, 3, 4, 5};
+        const int order[] = {20, WIFI_NETWORKS, 21, 12, 19, 17, 10, 0, 11, 13, 14, 1, 2, 3, 4, 5, SYSTEM_INFO};
         bool phone = sumi_phone_mode();
         int row = 0;
         for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); ++i) {
@@ -474,24 +435,11 @@ static void show_page(int which) {
         int current = sumi_charge_current();
         value = label(panel, current == 185 ? "選択中: 標準\nゆっくり充電" :
             current == 425 ? "選択中: 高速" : "現在の設定を確認できません", 222, 320);
-    } else if (which == 15) {
-        button(panel, "20秒止めて比較", 56, 300, choose, 1);
-        button(panel, "今すぐ充電を再開", 132, 300, choose, 0);
-        value = label(panel, charge_restore_pending ? "充電停止中\n終了後、自動で再開" :
-            "USBをつないだまま\n音の変化を確認", 222, 320);
-    } else if (which == 16) {
-        button(panel, "20秒止めて比較", 56, 300, choose, 1);
-        button(panel, "今すぐ音声を再開", 132, 300, choose, 0);
-        value = label(panel, noise_message(sumi_noise_test_state()), 222, 320);
     } else if (which == 17) {
         button(panel, "OpenAI（日本語）", 56, 300, choose, 1);
         button(panel, "Muse", 132, 300, choose, 0);
         value = label(panel, sumi_asr_enabled() ? "選択中: OpenAI\n返答は本体で読み上げ" :
             sumi_asr_configured() ? "選択中: Muse\nOpenAIキー設定済み" : "選択中: Muse\nOpenAIキー未設定", 222, 320);
-    } else if (which == 18) {
-        label(panel, "画面の電源を20秒停止\n音の変化を確認します\n自動で画面が戻ります", 58, 320);
-        button(panel, "20秒消して比較", 158, 300, choose, 1);
-        value = label(panel, sumi_panel_test_state() == 4 ? "表示回路を再開しました" : "USBをつないだまま開始", 240, 320);
     } else if (which == 19) {
         label(panel, "mcu-wearable", 48, 320);
         button(panel, "ON：端末指定を付ける", 91, 300, choose, 1);
@@ -506,6 +454,10 @@ static void show_page(int which) {
         button(panel, "スマホ接続を開始", 56, 300, choose, 0);
         button(panel, "Muse認証の同期を許可", 132, 300, choose, 1);
         value = label(panel, "スマホアプリから\n本体設定を変更できます", 212, 320);
+    } else if (which == SYSTEM_INFO) {
+        label(panel, "ファームウェア", 76, 320);
+        lv_obj_t *version = label(panel, esp_app_get_description()->version, 126, 320);
+        lv_label_set_long_mode(version, LV_LABEL_LONG_MODE_WRAP);
     } else if (which == WIFI_NETWORK || which == WIFI_DELETE) {
         lv_obj_t *ssid = label(panel, wifi_selection, 48, 320);
         lv_obj_set_style_text_font(ssid, &font, 0);
@@ -634,15 +586,7 @@ void sumi_ui_init(void) {
 void sumi_ui_prepare(void) {
     sumi_phone_apply_setting();
     if (page == 12 && value && shown_chat_catalog != sumi_chat_catalog_hash()) show_page(12);
-    restore_charging(); /* Also while hidden, asleep or disconnected from Muse. */
     sumi_clock_poll(muse_wifi_connected());
-    static sumi_noise_state_t noise_previous = SUMI_NOISE_IDLE;
-    sumi_noise_state_t noise = sumi_noise_test_state();
-    if (page == 16 && value && noise != noise_previous) lv_label_set_text(value, noise_message(noise));
-    noise_previous = noise;
-    if (page == 18 && value && sumi_panel_test_state() == 4 &&
-        strcmp(lv_label_get_text(value), "表示回路を再開しました"))
-        lv_label_set_text(value, "表示回路を再開しました");
     if (!root) return;
     paired = muse_link_hatch_linked();
     muse_ble_status_t ble; muse_ble_status(&ble);

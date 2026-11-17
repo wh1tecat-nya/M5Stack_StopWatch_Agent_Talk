@@ -30,7 +30,7 @@ source "$IDF_PATH/export.sh"
 set -u
 idf.py --version | grep -q '6\.0\.3' || { echo 'Use ESP-IDF 6.0.3.' >&2; exit 1; }
 SUMI_CONFIGS='sdkconfig.defaults;devices/sdkconfig.muse;devices/sdkconfig.muse-m5stack-stopwatch;sdkconfig.sumi'
-build_options=()
+build_options=("-DPROJECT_VER=${SUMI_OTA_VERSION:-0.1.6}")
 if [[ "${SUMI_OTA:-0}" == 1 ]]; then
     export SUMI_OTA_SIGNING_KEY="${SUMI_OTA_SIGNING_KEY:-$SUMI_ROOT/.cache/ota-signing/c152.pem}"
     if [[ ! -f "$SUMI_OTA_SIGNING_KEY" ]]; then
@@ -53,7 +53,6 @@ Path(sys.argv[1]).write_text('CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions
     f'CONFIG_SECURE_BOOT_SIGNING_KEY={json.dumps(sys.argv[2], ensure_ascii=False)}\n')
 PY
     SUMI_CONFIGS="$SUMI_CONFIGS;$ota_config"
-    build_options+=("-DPROJECT_VER=${SUMI_OTA_VERSION:-0.1.0}")
 fi
 if [[ "${SUMI_WORLD_BENCH:-0}" == 1 ]]; then
     SUMI_CONFIGS="$SUMI_CONFIGS;$SUMI_ROOT/voice_training/native/esp32/sdkconfig.world-bench"
